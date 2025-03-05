@@ -1,0 +1,7 @@
+[package]
+name = "epub_textractor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+miniz_oxide = "0.8.4"
