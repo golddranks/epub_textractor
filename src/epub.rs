@@ -28,7 +28,7 @@ impl Error for EpubError {}
 
 pub struct Epub {
     pub chapters: Vec<(String, usize)>,
-    pub texts: Vec<String>,
+    pub texts: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +90,7 @@ pub fn extract_contents(file: &mut File) -> Res<Epub> {
         let text_file = &files[href];
         let text_string = text_file.extract_string(file)?;
         hrefs.insert(href, idx);
-        texts.push(text_string);
+        texts.push((href.to_owned(), text_string));
     }
 
     let chapters = doc::get_chapters(&toc, &hrefs)?;
@@ -113,6 +113,6 @@ impl Epub {
     pub fn paragraph_iter(&self, range: Range<usize>) -> impl Iterator<Item = Res<Paragraph>> {
         self.texts[range]
             .iter()
-            .flat_map(|passage| doc::parse_passage(passage))
+            .flat_map(|(href, passage)| doc::parse_passage(href, passage))
     }
 }

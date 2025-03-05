@@ -68,7 +68,7 @@ pub fn parse_tag(source: &str, offset: usize) -> Res<Option<Tag>> {
 
     // parse tag name
     let tag_name_end = source[pos..]
-        .find([' ', '\t', '\n', '\r', '>'])
+        .find([' ', '/', '\t', '\n', '\r', '>'])
         .ok_or(XhtmlError::MalformedTagName)?;
     let tag_name = &source[pos..pos + tag_name_end];
     pos += tag_name_end;
@@ -106,6 +106,11 @@ pub fn parse_tag(source: &str, offset: usize) -> Res<Option<Tag>> {
 #[test]
 fn test_parse_tag() {
     assert_eq!(parse_tag("<hoge>", 0).unwrap().unwrap().span, 0..6);
+    assert_eq!(parse_tag("<hoge/>", 0).unwrap().unwrap().span, 0..7);
+    assert_eq!(parse_tag("<hoge />", 0).unwrap().unwrap().span, 0..8);
+    assert_eq!(parse_tag("<hoge>", 0).unwrap().unwrap().name, "hoge");
+    assert_eq!(parse_tag("<hoge/>", 0).unwrap().unwrap().name, "hoge");
+    assert_eq!(parse_tag("<hoge />", 0).unwrap().unwrap().name, "hoge");
     assert_eq!(
         parse_tag("<hoge>after hoge", 0).unwrap().unwrap().span,
         0..6

@@ -9,10 +9,11 @@ use super::Paragraph;
 use super::xhtml::TType;
 use super::xhtml::iter::TagIter;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum DocError {
     Unschematic,
     UnknownFormating(String),
+    DetailedError(String, usize, Box<dyn Error>),
 }
 
 impl Display for DocError {
@@ -20,6 +21,7 @@ impl Display for DocError {
         match self {
             DocError::Unschematic => f.write_str("Invalid document: Unschematic!"),
             DocError::UnknownFormating(s) => write!(f, "Unknown formating: {s}!"),
+            DocError::DetailedError(s, r, e) => write!(f, "Error: {s} {r} {e}!"),
         }
     }
 }
@@ -96,18 +98,32 @@ fn parse_paragraph<'src>(tag: &Tag<'src>) -> Res<Paragraph<'src>> {
         });
     }
 
-    if tag.name != "p" {
-        dbg!(tag.repr());
-        Err(DocError::UnknownFormating(tag.repr().to_owned()))?;
+    if ["svg"].contains(&tag.name) {
+        return Ok(Paragraph {
+            text: inner,
+            kind: PType::StandaloneImage,
+        });
     }
 
-    if let Some(img) = tag.get_first_child("img")? {
+    if ["hr"].contains(&tag.name) {
+        return Ok(Paragraph {
+            text: inner,
+            kind: PType::Empty,
+        });
+    }
+
+    if let Some(img) = tag.iter()?.next_by_el(&["img", "svg"])? {
         if tag.span_with(&img).trim().is_empty() && img.span_with(&end_tag).trim().is_empty() {
             return Ok(Paragraph {
                 text: inner,
                 kind: PType::StandaloneImage,
             });
         }
+    }
+
+    if tag.name != "p" {
+        dbg!(tag.repr());
+        Err(DocError::UnknownFormating(tag.repr().to_owned()))?;
     }
 
     if let Some(br) = tag.get_first_child("br")? {
@@ -126,6 +142,7 @@ fn parse_paragraph<'src>(tag: &Tag<'src>) -> Res<Paragraph<'src>> {
 }
 
 struct PassageParser<'src> {
+    href: &'src str,
     body: Option<TagIter<'src>>,
 }
 
@@ -137,7 +154,8 @@ impl<'src> Iterator for PassageParser<'src> {
             return Some(Err(DocError::Unschematic.into()));
         };
         while let Ok(Some(p)) = body.next_by_el(&[]) {
-            let parsed = parse_paragraph(&p);
+            let parsed = parse_paragraph(&p)
+                .map_err(|e| DocError::DetailedError(self.href.to_owned(), p.before(), e).into());
             if let Ok(Paragraph {
                 kind: PType::Transparent,
                 ..
@@ -155,12 +173,15 @@ impl<'src> Iterator for PassageParser<'src> {
     }
 }
 
-pub fn parse_passage(source: &str) -> impl Iterator<Item = Res<Paragraph>> {
+pub fn parse_passage<'src>(
+    href: &'src str,
+    source: &'src str,
+) -> impl Iterator<Item = Res<Paragraph<'src>>> {
     let iter = Tag::get_first(source, "body")
         .and_then(|body| body.ok_or(DocError::Unschematic.into()))
         .and_then(|body| body.iter())
         .ok();
-    PassageParser { body: iter }
+    PassageParser { href, body: iter }
 }
 
 pub fn with_fmt_stripped<'b, 'src>(
@@ -204,6 +225,7 @@ pub fn with_fmt_stripped<'b, 'src>(
                     .ok_or_else(|| DocError::UnknownFormating(tag.repr().to_owned()))?;
                 match tag.name {
                     "span" => out.push_str(inner),
+                    "a" => out.push_str(inner),
                     "ruby" => {
                         let mut iter = tag.iter()?;
                         // In case there are rb tags, use the contents of them
@@ -294,4 +316,26 @@ fn test_strip_formating() {
     )
     .unwrap();
     assert_eq!(result, "漢字!\n");
+}
+
+#[test]
+fn test_parse_paragraph() {
+    let source = r##"<?xml version='1.0' encoding='utf-8'?>
+    <html><body class="p-image">
+      <div class="main">
+        <svg>
+          <image/>
+        </svg>
+      </div>
+    </body></html>
+"##;
+    let mut body = Tag::get_first(source, "body")
+        .unwrap()
+        .unwrap()
+        .iter()
+        .unwrap();
+    let p = body.next_by_el(&[]).unwrap().unwrap();
+    assert_eq!(parse_paragraph(&p).unwrap().kind, PType::Transparent);
+    let p = body.next_by_el(&[]).unwrap().unwrap();
+    assert_eq!(parse_paragraph(&p).unwrap().kind, PType::StandaloneImage);
 }

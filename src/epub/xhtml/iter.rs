@@ -30,6 +30,9 @@ impl<'src> TagIter<'src> {
     }
 
     pub fn next_by_tag(&mut self, target_tags: &[&str]) -> Res<Option<Tag<'src>>> {
+        if self.root.kind != TType::Opening {
+            return Ok(None);
+        }
         while self.stack.is_empty().not() {
             let tag = match parse_tag(self.root.source, self.pos)? {
                 Some(tag) => tag,

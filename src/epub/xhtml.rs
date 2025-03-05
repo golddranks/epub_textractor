@@ -16,7 +16,6 @@ enum XhtmlError {
     ClosingTagMismatch,
     UnexpectedEOF,
     UnexpectedNotFound,
-    UnexpectedClosingTagIter,
 }
 
 impl Display for XhtmlError {
@@ -28,9 +27,6 @@ impl Display for XhtmlError {
             XhtmlError::ClosingTagMismatch => f.write_str("Invalid XHTML: ClosingTagMismatch!"),
             XhtmlError::UnexpectedEOF => f.write_str("Invalid XHTML: Unexpected EOF!"),
             XhtmlError::UnexpectedNotFound => f.write_str("Unexpected: Tag not found!"),
-            XhtmlError::UnexpectedClosingTagIter => {
-                f.write_str("Unexpected: Can't iter closing tag!")
-            }
         }
     }
 }
@@ -92,9 +88,6 @@ impl<'src> Tag<'src> {
     }
 
     pub fn iter(&self) -> Res<TagIter<'src>> {
-        if self.kind != TType::Opening {
-            Err(XhtmlError::UnexpectedClosingTagIter)?
-        }
         Ok(TagIter::new(self))
     }
 
@@ -140,7 +133,7 @@ fn test_find_first() -> Res<()> {
 }
 
 #[test]
-fn test_get_end() -> Res<()> {
+fn test_get_end_1() -> Res<()> {
     let source = "aa<span>bb</span>cc";
 
     let mut iter = Tag::root(source).iter()?;
@@ -148,10 +141,26 @@ fn test_get_end() -> Res<()> {
         let (_, _) = tag.get_end()?;
     }
 
+    Ok(())
+}
+
+#[test]
+fn test_get_end_2() -> Res<()> {
     let source = "aa<span>bb</span>cc<span>dd</span>ee";
 
     let span_1 = Tag::get_first(source, "span")?.unwrap();
     assert_eq!(span_1.get_end()?.1, "bb");
+
+    Ok(())
+}
+
+#[test]
+fn test_get_end_3() -> Res<()> {
+    let source = "aa<hr/>bb";
+
+    let hr = Tag::get_first(source, "hr")?.unwrap();
+    assert_eq!(hr.get_end()?.1, "");
+
     Ok(())
 }
 
