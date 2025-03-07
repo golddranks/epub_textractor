@@ -1,8 +1,6 @@
 use std::ops::Not;
 
-use crate::Res;
-
-use super::{TType, Tag, XhtmlError, tag_parser::parse_tag};
+use super::{Res, TType, Tag, XhtmlError, tag_parser::parse_tag};
 
 #[derive(Debug)]
 pub struct TagIter<'src> {

@@ -1,8 +1,6 @@
 use std::ops::{Not, Range};
 
-use crate::Res;
-
-use super::{TType, Tag, XhtmlError};
+use super::{Res, TType, Tag, XhtmlError};
 
 fn is_attr_name_char(ch: u8) -> bool {
     ![b' ', b'\t', b'\n', b'\r', b'=', b'>', b'/', b'\'', b'"'].contains(&ch)

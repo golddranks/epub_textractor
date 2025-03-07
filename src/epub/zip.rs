@@ -8,7 +8,7 @@ use std::os::unix::fs::FileExt;
 
 use miniz_oxide::inflate::decompress_to_vec_with_limit;
 
-use crate::Res;
+use super::Res;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[repr(C)]

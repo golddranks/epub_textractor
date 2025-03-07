@@ -1,6 +1,9 @@
-use std::{io::Write, ops::Range};
+use std::{
+    io::Write,
+    ops::{Not, Range},
+};
 
-use crate::Res;
+use crate::{Ctx, error::ResultOrDie, 死};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yomi<'src> {
@@ -8,7 +11,7 @@ pub struct Yomi<'src> {
     pub rt: &'src str,
 }
 
-pub fn write_yomi(yomi: &[Yomi], mut file: impl Write, txt: &str) -> Res<()> {
+pub fn write_yomi(ctx: &Ctx, yomi: &[Yomi], mut file: impl Write, txt: &str) {
     let mut buf = String::new();
     for &Yomi {
         span: Range { start, end },
@@ -18,9 +21,8 @@ pub fn write_yomi(yomi: &[Yomi], mut file: impl Write, txt: &str) -> Res<()> {
     {
         let rb = &txt[start..end];
         let rt = fix_little_yomi(rb, rt, &mut buf);
-        writeln!(file, "{start}:{end}:{rb}:{rt}")?;
+        writeln!(file, "{start}:{end}:{rb}:{rt}").or_die(|e| 死!(ctx, e));
     }
-    Ok(())
 }
 
 fn fix_little_yomi<'s>(rb: &str, rt: &'s str, fixed: &'s mut String) -> &'s str {
@@ -31,7 +33,13 @@ fn fix_little_yomi<'s>(rb: &str, rt: &'s str, fixed: &'s mut String) -> &'s str 
         return rt;
     }
     let previous = little_idx - 3;
-    debug_assert!(rt.is_char_boundary(previous));
+
+    // "お や じ" "み や こ" etc.
+    if rt.is_char_boundary(previous).not() {
+        fixed.clear();
+        fixed.extend(rt.chars().filter(|&ch| ch != ' '));
+        return fixed.as_str();
+    }
     match &rt[previous..little_idx] {
         "き" | "ぎ" | "し" | "じ" | "ち" | "ぢ" | "に" | "ひ" | "び" | "ぴ" | "み" | "り" =>
             {}
@@ -82,6 +90,7 @@ fn test_fix_little_yomi() {
         ("頭", "じゆう", "じゅう"),
         ("薯", "じよ", "じょ"),
         ("玩具", "おもちや", "おもちゃ"),
+        ("親父", "お や じ", "おやじ"),
     ] {
         assert_eq!(fix_little_yomi(rb, rt, &mut fixed), expected);
     }

@@ -1,38 +1,44 @@
-use std::{collections::HashMap, error::Error, fs::File, io::Write, path::Path, process::exit};
+use std::{fs::File, io::Write, path::Path, process::exit};
 
-type Res<T> = Result<T, Box<dyn Error>>;
+use error::{ResultOrDie, 死};
 
 mod epub;
+mod error;
 mod gaiji;
 mod txt;
 mod yomi;
 
-fn run(epub_fname: &Path) -> Res<()> {
+#[derive(Clone, Copy, Debug)]
+struct Ctx {
+    epub_fname: &'static str,
+    phase: &'static str,
+}
+
+fn run(ctx: &mut Ctx) {
+    let epub_fname = Path::new(&ctx.epub_fname);
     let txt_fname = epub_fname.with_extension("txt");
     let gaiji_fname = epub_fname.with_extension("gaiji");
     let yomi_fname = epub_fname.with_extension("yomi");
 
-    let mut file = File::open(epub_fname)?;
+    let mut file = File::open(epub_fname).or_die(|e| 死!(ctx, "failed to open EPUB file: {e}"));
 
-    let mut gaiji = gaiji::read_gaiji(&gaiji_fname)?.unwrap_or_else(HashMap::new);
+    let mut gaiji = gaiji::read_gaiji(ctx, &gaiji_fname).unwrap_or_default();
     let gaiji_original_size = gaiji.len();
 
-    let epub = epub::extract_contents(&mut file)?;
+    let epub = epub::extract_contents(ctx, &mut file);
 
-    let (txt, yomi) = txt::produce_txt_yomi(&mut gaiji, &epub)?;
-    let mut txt_file = File::create(&txt_fname)?;
-    txt_file.write_all(txt.as_bytes())?;
+    let (txt, yomi) = txt::produce_txt_yomi(ctx, &mut gaiji, &epub);
+    let mut txt_file = File::create(&txt_fname).or_die(|e| 死!(ctx, e));
+    txt_file.write_all(txt.as_bytes()).or_die(|e| 死!(ctx, e));
 
     if gaiji_original_size != gaiji.len() {
         eprintln!("New gaiji found! Updating/creating the gaiji file.");
-        let gaiji_file = File::create(&gaiji_fname)?;
-        gaiji::write_gaiji(&gaiji, gaiji_file)?;
+        let gaiji_file = File::create(&gaiji_fname).or_die(|e| 死!(ctx, e));
+        gaiji::write_gaiji(ctx, &gaiji, gaiji_file);
     }
 
-    let yomi_file = File::create(&yomi_fname)?;
-    yomi::write_yomi(&yomi, yomi_file, &txt)?;
-
-    Ok(())
+    let yomi_file = File::create(&yomi_fname).or_die(|e| 死!(ctx, e));
+    yomi::write_yomi(ctx, &yomi, yomi_file, &txt);
 }
 
 fn main() {
@@ -42,8 +48,10 @@ fn main() {
         exit(1);
     };
 
-    if let Err(e) = run(Path::new(&epub_fname)) {
-        eprintln!("{e}");
-        exit(2);
-    }
+    let mut ctx = Ctx {
+        epub_fname: epub_fname.leak(),
+        phase: "start",
+    };
+
+    run(&mut ctx);
 }

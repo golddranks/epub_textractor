@@ -1,11 +1,12 @@
+use std::ops::Not;
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use crate::Res;
 use crate::epub::PType;
 use crate::epub::xhtml::Tag;
 use crate::yomi::Yomi;
 
 use super::Paragraph;
+use super::Res;
 use super::xhtml::TType;
 use super::xhtml::iter::TagIter;
 
@@ -75,7 +76,11 @@ pub fn get_chapters(source: &str, hrefs: &HashMap<&str, usize>) -> Res<Vec<(Stri
         let src = content.get_attr("src")?.ok_or(DocError::Unschematic)?;
         let src_file = src.split_once('#').map(|(file, _)| file).unwrap_or(src);
 
-        chapters.push((title.to_owned(), hrefs[src_file]));
+        let Some(href) = hrefs.get(src_file) else {
+            eprintln!("File {src_file} not found for chapter {title}");
+            continue;
+        };
+        chapters.push((title.to_owned(), *href));
     }
 
     Ok(chapters)
@@ -85,20 +90,20 @@ fn parse_paragraph<'src>(tag: &Tag<'src>) -> Res<Paragraph<'src>> {
     let (end_tag, inner) = tag.get_end()?;
     let inner = inner.trim();
 
-    if tag.name == "div" {
+    if ["div", "section"].contains(&tag.name) {
         return Ok(Paragraph {
             text: "",
             kind: PType::Transparent,
         });
     }
-    if ["h1", "h2", "h3"].contains(&tag.name) {
+    if ["h1", "h2", "h3", "h4"].contains(&tag.name) {
         return Ok(Paragraph {
             text: inner,
             kind: PType::Header,
         });
     }
 
-    if ["svg"].contains(&tag.name) {
+    if ["svg", "img"].contains(&tag.name) {
         return Ok(Paragraph {
             text: inner,
             kind: PType::StandaloneImage,
@@ -112,6 +117,10 @@ fn parse_paragraph<'src>(tag: &Tag<'src>) -> Res<Paragraph<'src>> {
         });
     }
 
+    if ["p", "a", "span"].contains(&tag.name).not() {
+        Err(DocError::UnknownFormating(tag.repr().to_owned()))?;
+    }
+
     if let Some(img) = tag.iter()?.next_by_el(&["img", "svg"])? {
         if tag.span_with(&img).trim().is_empty() && img.span_with(&end_tag).trim().is_empty() {
             return Ok(Paragraph {
@@ -119,11 +128,6 @@ fn parse_paragraph<'src>(tag: &Tag<'src>) -> Res<Paragraph<'src>> {
                 kind: PType::StandaloneImage,
             });
         }
-    }
-
-    if tag.name != "p" {
-        dbg!(tag.repr());
-        Err(DocError::UnknownFormating(tag.repr().to_owned()))?;
     }
 
     if let Some(br) = tag.get_first_child("br")? {
@@ -197,6 +201,7 @@ pub fn with_fmt_stripped<'b, 'src>(
         match tag.kind {
             TType::Closing => continue,
             TType::SelfClosing => match tag.name {
+                "br" => out.push('\n'),
                 "img" => {
                     let Some(src) = tag.get_attr("src")? else {
                         Err(DocError::UnknownFormating(tag.repr().to_owned()))?
@@ -205,7 +210,7 @@ pub fn with_fmt_stripped<'b, 'src>(
                         Some(&gaiji_ch) => gaiji_ch,
                         None => {
                             let replacement_ch = '�';
-                            if let Some("gaiji") = tag.get_attr("class")? {
+                            if let Some("gaiji" | "gaiji-line") = tag.get_attr("class")? {
                                 gaiji.insert(src.to_owned(), replacement_ch);
                             } else {
                                 Err(DocError::UnknownFormating(tag.repr().to_owned()))?;
@@ -224,8 +229,7 @@ pub fn with_fmt_stripped<'b, 'src>(
                     .step_out(&tag)?
                     .ok_or_else(|| DocError::UnknownFormating(tag.repr().to_owned()))?;
                 match tag.name {
-                    "span" => out.push_str(inner),
-                    "a" => out.push_str(inner),
+                    "span" | "a" | "em" => out.push_str(inner),
                     "ruby" => {
                         let mut iter = tag.iter()?;
                         // In case there are rb tags, use the contents of them
@@ -319,7 +323,7 @@ fn test_strip_formating() {
 }
 
 #[test]
-fn test_parse_paragraph() {
+fn test_parse_paragraph_1() {
     let source = r##"<?xml version='1.0' encoding='utf-8'?>
     <html><body class="p-image">
       <div class="main">
@@ -338,4 +342,25 @@ fn test_parse_paragraph() {
     assert_eq!(parse_paragraph(&p).unwrap().kind, PType::Transparent);
     let p = body.next_by_el(&[]).unwrap().unwrap();
     assert_eq!(parse_paragraph(&p).unwrap().kind, PType::StandaloneImage);
+}
+
+#[test]
+fn test_parse_paragraph_2() {
+    let source = r#"<body><p class="calibre3">　次から次へと、とんでもない言葉が口から衝いて出るジャティスに、フェロードも、グレンも、<ruby><rb>最</rb><rt>も</rt><rb>早</rb><rt>はや</rt></ruby>、脳内処理が追いつかない。</p>
+    <p class="calibre3"><img class="fit" src="../images/00009.jpeg" alt=""/></p>
+    <p class="calibre3">「ご、五億年……？」</p></body>"#;
+    let mut body = Tag::get_first(source, "body")
+        .unwrap()
+        .unwrap()
+        .iter()
+        .unwrap();
+    let p = body.next_by_el(&[]).unwrap().unwrap();
+    assert_eq!(parse_paragraph(&p).unwrap().kind, PType::BodyText);
+    body.step_out(&p).unwrap();
+    let p = body.next_by_el(&[]).unwrap().unwrap();
+    assert_eq!(parse_paragraph(&p).unwrap().kind, PType::StandaloneImage);
+    body.step_out(&p).unwrap();
+    let p = body.next_by_el(&[]).unwrap().unwrap();
+    assert_eq!(parse_paragraph(&p).unwrap().kind, PType::BodyText);
+    body.step_out(&p).unwrap();
 }

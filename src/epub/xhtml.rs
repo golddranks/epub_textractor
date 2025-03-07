@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display, ops::Range};
 
-use crate::Res;
+use super::Res;
 
 pub mod iter;
 mod tag_parser;
