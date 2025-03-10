@@ -1,10 +1,10 @@
 macro_rules! 死 {
-    ($ctx:expr, $error:ident) => {{
-        eprintln!("[{}:{}] {} at phase {}: {}", file!(), line!(), $ctx.epub_fname, $ctx.phase, $error);
+    ($error:ident) => {{
+        eprintln!("[{}:{}] {} at phase {}: {}", file!(), line!(), crate::EPUB_FNAME, crate::PHASE, $error);
         std::process::exit(2);
     }};
-    ($ctx:expr, $fmt:literal $(, $args:expr)*) => {{
-        eprintln!("[{}:{}] {} at phase {}: {}", file!(), line!(), $ctx.epub_fname, $ctx.phase, format!($fmt, $($args),*));
+    ($fmt:literal $(, $args:expr)*) => {{
+        eprintln!("[{}:{}] {} at phase {}: {}", file!(), line!(), crate::EPUB_FNAME, crate::PHASE, format!($fmt, $($args),*));
         std::process::exit(2);
     }};
 }

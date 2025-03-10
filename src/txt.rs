@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
 use crate::{
-    Ctx,
+    PHASE,
     epub::{Epub, PType, Paragraph},
     yomi::Yomi,
 };
 
 pub fn produce_txt_yomi<'src>(
-    ctx: &mut Ctx,
     gaiji: &mut HashMap<String, char>,
     epub: &'src Epub,
 ) -> (String, Vec<Yomi<'src>>) {
-    ctx.phase = "produce";
+    PHASE.set("produce");
     let mut yomi = Vec::new();
     let mut output = String::new();
-    for (_, paragraphs) in epub.chapter_iter() {
+    for (title, paragraphs) in epub.chapter_iter() {
+        PHASE.set(format!("produce: {title}"));
         let mut chapter_break_done = false;
         for paragraph in paragraphs {
             match paragraph {
@@ -26,7 +26,7 @@ pub fn produce_txt_yomi<'src>(
                         output.push_str("\n\n\n\n");
                         chapter_break_done = true;
                     }
-                    p.with_fmt_stripped(ctx, gaiji, &mut yomi, &mut output);
+                    p.with_fmt_stripped(gaiji, &mut yomi, &mut output);
                 }
                 Paragraph {
                     kind: PType::Empty, ..

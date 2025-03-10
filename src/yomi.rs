@@ -3,7 +3,7 @@ use std::{
     ops::{Not, Range},
 };
 
-use crate::{Ctx, error::ResultOrDie, 死};
+use crate::{error::ResultOrDie, 死};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yomi<'src> {
@@ -11,7 +11,7 @@ pub struct Yomi<'src> {
     pub rt: &'src str,
 }
 
-pub fn write_yomi(ctx: &Ctx, yomi: &[Yomi], mut file: impl Write, txt: &str) {
+pub fn write_yomi(yomi: &[Yomi], mut file: impl Write, txt: &str) {
     let mut buf = String::new();
     for &Yomi {
         span: Range { start, end },
@@ -21,7 +21,7 @@ pub fn write_yomi(ctx: &Ctx, yomi: &[Yomi], mut file: impl Write, txt: &str) {
     {
         let rb = &txt[start..end];
         let rt = fix_little_yomi(rb, rt, &mut buf);
-        writeln!(file, "{start}:{end}:{rb}:{rt}").or_die(|e| 死!(ctx, e));
+        writeln!(file, "{start}:{end}:{rb}:{rt}").or_die(|e| 死!(e));
     }
 }
 

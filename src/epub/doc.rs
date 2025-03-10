@@ -55,7 +55,7 @@ pub fn get_spine(source: &str) -> Res<Vec<&str>> {
     Ok(idrefs)
 }
 
-pub fn get_chapters(source: &str, hrefs: &HashMap<&str, usize>) -> Res<Vec<(String, usize)>> {
+pub fn get_toc(source: &str) -> Res<Vec<(String, String)>> {
     let mut navmap = Tag::get_first(source, "navMap")?
         .ok_or(DocError::Unschematic)?
         .iter()?;
@@ -76,11 +76,7 @@ pub fn get_chapters(source: &str, hrefs: &HashMap<&str, usize>) -> Res<Vec<(Stri
         let src = content.get_attr("src")?.ok_or(DocError::Unschematic)?;
         let src_file = src.split_once('#').map(|(file, _)| file).unwrap_or(src);
 
-        let Some(href) = hrefs.get(src_file) else {
-            eprintln!("File {src_file} not found for chapter {title}");
-            continue;
-        };
-        chapters.push((title.to_owned(), *href));
+        chapters.push((title.to_owned(), src_file.to_owned()));
     }
 
     Ok(chapters)
