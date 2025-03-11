@@ -1,6 +1,8 @@
 use std::ops::Not;
 
-use super::{Res, TType, Tag, XhtmlError, tag_parser::parse_tag};
+use crate::{error::OrDie, 即死, 死};
+
+use super::{TType, Tag, tag_parser::parse_tag};
 
 #[derive(Debug)]
 pub struct TagIter<'src> {
@@ -18,21 +20,21 @@ impl<'src> TagIter<'src> {
         }
     }
 
-    pub fn next_by_el(&mut self, target_els: &[&str]) -> Res<Option<Tag<'src>>> {
-        while let Some(tag) = self.next_by_tag(target_els)? {
+    pub fn next_by_el(&mut self, target_els: &[&str]) -> Option<Tag<'src>> {
+        while let Some(tag) = self.next_by_tag(target_els) {
             if tag.kind != TType::Closing {
-                return Ok(Some(tag));
+                return Some(tag);
             }
         }
-        Ok(None)
+        None
     }
 
-    pub fn next_by_tag(&mut self, target_tags: &[&str]) -> Res<Option<Tag<'src>>> {
+    pub fn next_by_tag(&mut self, target_tags: &[&str]) -> Option<Tag<'src>> {
         if self.root.kind != TType::Opening {
-            return Ok(None);
+            return None;
         }
         while self.stack.is_empty().not() {
-            let tag = match parse_tag(self.root.source, self.pos)? {
+            let tag = match parse_tag(self.root.source, self.pos) {
                 Some(tag) => tag,
                 None => {
                     // no literal tags left in source, trying for root tag
@@ -46,7 +48,7 @@ impl<'src> TagIter<'src> {
                         }
                     } else {
                         // source endeded, but there were still unpopped tags in stack?
-                        Err(XhtmlError::UnexpectedEOF)?
+                        即死!("unexpected EOF");
                     }
                 }
             };
@@ -58,39 +60,37 @@ impl<'src> TagIter<'src> {
                 match self.stack.pop() {
                     // closing tag in source matches the tag on stack
                     Some((_, expected)) if expected == tag.name => (),
-                    _ => Err(XhtmlError::ClosingTagMismatch)?,
+                    _ => 即死!("closing tag mismatch"),
                 }
             };
             if target_tags.is_empty() || target_tags.contains(&tag.name) {
-                return Ok(Some(tag));
+                return Some(tag);
             }
         }
-        Ok(None)
+        None
     }
 
-    pub fn step_out(&mut self, tag: &Tag<'src>) -> Res<Option<(Tag<'src>, &'src str)>> {
+    pub fn step_out(&mut self, tag: &Tag<'src>) -> Option<(Tag<'src>, &'src str)> {
         if tag.kind == TType::SelfClosing && self.pos == tag.after() {
-            return Ok(None);
+            return None;
         }
         let Some(tag_depth) = self
             .stack
             .iter()
             .position(|&(pos, name)| pos == tag.after() && name == tag.name)
         else {
-            return Err(XhtmlError::UnexpectedNotFound)?;
+            即死!("unexpected not found");
         };
 
         let end_tag = loop {
-            let end_tag = self
-                .next_by_tag(&[tag.name])?
-                .ok_or(XhtmlError::UnexpectedEOF)?;
+            let end_tag = self.next_by_tag(&[tag.name]).or_(死!("unexpected EOF"));
             if self.stack.len() == tag_depth {
                 break end_tag;
             }
         };
 
         let inner = &self.root.source[tag.after()..end_tag.before()];
-        Ok(Some((end_tag, inner)))
+        Some((end_tag, inner))
     }
 }
 
@@ -98,22 +98,22 @@ impl<'src> TagIter<'src> {
 fn test_tag_iter_step_out() {
     let source = r#"染めた<span>20</span>歳くらいの男<span>!!</span>（だとか）"#;
 
-    let mut iter = Tag::root(source).iter().unwrap();
-    let tag = iter.next_by_el(&[]).unwrap().unwrap();
-    let (_, inner) = iter.step_out(&tag).unwrap().unwrap();
+    let mut iter = Tag::root(source).iter();
+    let tag = iter.next_by_el(&[]).unwrap();
+    let (_, inner) = iter.step_out(&tag).unwrap();
     assert_eq!(inner, "20");
-    let tag = iter.next_by_el(&[]).unwrap().unwrap();
-    let (_, inner) = iter.step_out(&tag).unwrap().unwrap();
+    let tag = iter.next_by_el(&[]).unwrap();
+    let (_, inner) = iter.step_out(&tag).unwrap();
     assert_eq!(inner, "!!");
-    assert_eq!(iter.next_by_el(&[]).unwrap(), None);
+    assert_eq!(iter.next_by_el(&[]), None);
 }
 
 #[test]
 fn test_tag_iter_just_next() {
     let source = r#"染めた<span>20</span>歳くらいの男<span>!!</span>（だとか）"#;
 
-    let mut iter = Tag::root(source).iter().unwrap();
-    assert_eq!(iter.next_by_el(&[]).unwrap().unwrap().name, "span");
-    assert_eq!(iter.next_by_el(&[]).unwrap().unwrap().name, "span");
-    assert_eq!(iter.next_by_el(&[]).unwrap(), None);
+    let mut iter = Tag::root(source).iter();
+    assert_eq!(iter.next_by_el(&[]).unwrap().name, "span");
+    assert_eq!(iter.next_by_el(&[]).unwrap().name, "span");
+    assert_eq!(iter.next_by_el(&[]), None);
 }

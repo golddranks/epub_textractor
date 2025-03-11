@@ -1,19 +1,17 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::File;
 
 use crate::chapters::Chapter;
-use crate::error::ResultOrDie;
 use crate::yomi::Yomi;
-use crate::{PHASE, 死};
+use crate::{PHASE, 即死};
 
 mod doc;
 mod xhtml;
 mod zip;
 
-type Res<T> = Result<T, Box<dyn Error>>;
-
 pub struct Epub {
+    pub title: String,
+    pub author: String,
     pub texts: Vec<(String, String)>,
     pub hrefs: HashMap<String, usize>,
     pub spine: Vec<String>,
@@ -42,7 +40,7 @@ impl<'src> Paragraph<'src> {
         yomi: &mut Vec<Yomi<'src>>,
         buf: &'b mut String,
     ) -> &'b str {
-        doc::with_fmt_stripped(gaiji, yomi, buf, self.text).or_die(|e| 死!(e))
+        doc::with_fmt_stripped(gaiji, yomi, buf, self.text)
     }
 }
 
@@ -53,7 +51,6 @@ impl Epub {
         let mut toc = None;
         let mut content = None;
         for file in zip::FileIter::new(file) {
-            let file = file.or_die(|e| 死!(e));
             match &*file.name {
                 "content.opf" => content = Some(file),
                 "toc.ncx" => toc = Some(file),
@@ -64,20 +61,24 @@ impl Epub {
         }
 
         let (Some(toc), Some(content)) = (toc, content) else {
-            死!("No toc.ncx or content.opf found!");
+            即死!("No toc.ncx or content.opf found!");
         };
 
-        let toc = toc.extract_string(file).or_die(|e| 死!(e));
-        let content = content.extract_string(file).or_die(|e| 死!(e));
+        let toc = toc.extract_string(file);
+        let content = content.extract_string(file);
+
+        let title = doc::get_title(&content).to_owned();
+
+        let author = doc::get_author(&content).to_owned();
 
         // manifest is a id->href map of the EPUB file contents (including images, style sheets, metadata etc.)
-        let manifest = doc::get_manifest(&content).or_die(|e| 死!(e));
+        let manifest = doc::get_manifest(&content);
 
         // spine is a list of ids that are in the reading order
-        let spine = doc::get_spine(&content).or_die(|e| 死!(e));
+        let spine = doc::get_spine(&content);
 
         // toc is a list of (chapter title, href) tuples, defining the starting point of each chapter
-        let toc = doc::get_toc(&toc).or_die(|e| 死!(e));
+        let toc = doc::get_toc(&toc);
 
         // hrefs is a href->idx map of the spine
         let mut hrefs = HashMap::new();
@@ -88,19 +89,24 @@ impl Epub {
         for (idx, idref) in spine.iter().enumerate() {
             let href = &manifest[idref];
             let text_file = &files[href];
-            let text_string = text_file.extract_string(file).or_die(|e| 死!(e));
+            let text_string = text_file.extract_string(file);
             hrefs.insert(href.to_owned(), idx);
             texts.push((href.to_owned(), text_string));
         }
 
-
-        Epub { texts, hrefs, spine, toc }
+        Epub {
+            title,
+            author,
+            texts,
+            hrefs,
+            spine,
+            toc,
+        }
     }
 
     pub fn paragraph_iter(&self, chapter: &Chapter) -> impl Iterator<Item = Paragraph> {
         self.texts[chapter.idxs.clone()]
             .iter()
             .flat_map(|(href, passage)| doc::parse_passage(href, passage))
-            .map(|r| r.or_die(|e| 死!(e)))
     }
 }

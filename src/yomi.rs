@@ -3,7 +3,7 @@ use std::{
     ops::{Not, Range},
 };
 
-use crate::{error::ResultOrDie, 死};
+use crate::{error::OrDie, 死};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yomi<'src> {
@@ -21,7 +21,7 @@ pub fn write_yomi(yomi: &[Yomi], mut file: impl Write, txt: &str) {
     {
         let rb = &txt[start..end];
         let rt = fix_little_yomi(rb, rt, &mut buf);
-        writeln!(file, "{start}:{end}:{rb}:{rt}").or_die(|e| 死!(e));
+        writeln!(file, "{start}:{end}:{rb}:{rt}").or_(死!());
     }
 }
 

@@ -1,37 +1,10 @@
-use std::{error::Error, fmt::Display, ops::Range};
-
-use super::Res;
+use std::ops::Range;
 
 pub mod iter;
 mod tag_parser;
 
 use iter::TagIter;
 use tag_parser::parse_attr;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum XhtmlError {
-    MalformedTagName,
-    CannotFindTagEnd,
-    MixedClosingMarks,
-    ClosingTagMismatch,
-    UnexpectedEOF,
-    UnexpectedNotFound,
-}
-
-impl Display for XhtmlError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            XhtmlError::MalformedTagName => f.write_str("Invalid XHTML: MalformedTagName!"),
-            XhtmlError::CannotFindTagEnd => f.write_str("Invalid XHTML: CannotFindTagEnd!"),
-            XhtmlError::MixedClosingMarks => f.write_str("Invalid XHTML: MixedClosingMarks!"),
-            XhtmlError::ClosingTagMismatch => f.write_str("Invalid XHTML: ClosingTagMismatch!"),
-            XhtmlError::UnexpectedEOF => f.write_str("Invalid XHTML: Unexpected EOF!"),
-            XhtmlError::UnexpectedNotFound => f.write_str("Unexpected: Tag not found!"),
-        }
-    }
-}
-
-impl Error for XhtmlError {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TType {
@@ -50,22 +23,21 @@ pub struct Tag<'src> {
 }
 
 impl<'src> Tag<'src> {
-    pub fn get_first(source: &'src str, tag: &str) -> Res<Option<Self>> {
-        Tag::root(source).iter()?.next_by_el(&[tag])
+    pub fn get_first(source: &'src str, tag: &str) -> Option<Self> {
+        Tag::root(source).iter().next_by_el(&[tag])
     }
 
-    pub fn get_first_child(&self, tag: &str) -> Res<Option<Self>> {
-        self.iter()?.next_by_el(&[tag])
+    pub fn get_first_child(&self, tag: &str) -> Option<Self> {
+        self.iter().next_by_el(&[tag])
     }
 
-    pub fn get_end(&self) -> Res<(Tag<'src>, &'src str)> {
-        Ok(self
-            .iter()?
-            .step_out(self)?
-            .unwrap_or_else(|| (self.to_owned(), "")))
+    pub fn get_end(&self) -> (Tag<'src>, &'src str) {
+        self.iter()
+            .step_out(self)
+            .unwrap_or_else(|| (self.to_owned(), ""))
     }
 
-    pub fn get_attr(&self, target_attr: &'src str) -> Res<Option<&'src str>> {
+    pub fn get_attr(&self, target_attr: &'src str) -> Option<&'src str> {
         parse_attr(self.repr(), target_attr)
     }
 
@@ -87,8 +59,8 @@ impl<'src> Tag<'src> {
         }
     }
 
-    pub fn iter(&self) -> Res<TagIter<'src>> {
-        Ok(TagIter::new(self))
+    pub fn iter(&self) -> TagIter<'src> {
+        TagIter::new(self)
     }
 
     pub fn before(&self) -> usize {
@@ -105,11 +77,11 @@ impl<'src> Tag<'src> {
 }
 
 #[test]
-fn test_find_first() -> Res<()> {
-    let hoge = Tag::get_first("<hoge>after hoge", "hoge")?.unwrap();
+fn test_find_first() {
+    let hoge = Tag::get_first("<hoge>after hoge", "hoge").unwrap();
     assert_eq!(hoge.name, "hoge");
     assert_eq!(hoge.span, 0..6);
-    let hoge = Tag::get_first("before hoge<hoge>after hoge", "hoge")?.unwrap();
+    let hoge = Tag::get_first("before hoge<hoge>after hoge", "hoge").unwrap();
     assert_eq!(hoge.span, 11..17);
     assert_eq!(hoge.before_text, "before hoge");
     assert_eq!(
@@ -125,54 +97,45 @@ fn test_find_first() -> Res<()> {
             >
             <dc:title>やっほう</dc:title></metadata></package></?xml>"#,
             "manifest"
-        )
-        .unwrap(),
+        ),
         None
     );
-    Ok(())
 }
 
 #[test]
-fn test_get_end_1() -> Res<()> {
+fn test_get_end_1() {
     let source = "aa<span>bb</span>cc";
 
-    let mut iter = Tag::root(source).iter()?;
-    while let Some(tag) = iter.next_by_el(&[])? {
-        let (_, _) = tag.get_end()?;
+    let mut iter = Tag::root(source).iter();
+    while let Some(tag) = iter.next_by_el(&[]) {
+        let (_, _) = tag.get_end();
     }
-
-    Ok(())
 }
 
 #[test]
-fn test_get_end_2() -> Res<()> {
+fn test_get_end_2() {
     let source = "aa<span>bb</span>cc<span>dd</span>ee";
 
-    let span_1 = Tag::get_first(source, "span")?.unwrap();
-    assert_eq!(span_1.get_end()?.1, "bb");
-
-    Ok(())
+    let span_1 = Tag::get_first(source, "span").unwrap();
+    assert_eq!(span_1.get_end().1, "bb");
 }
 
 #[test]
-fn test_get_end_3() -> Res<()> {
+fn test_get_end_3() {
     let source = "aa<hr/>bb";
 
-    let hr = Tag::get_first(source, "hr")?.unwrap();
-    assert_eq!(hr.get_end()?.1, "");
-
-    Ok(())
+    let hr = Tag::get_first(source, "hr").unwrap();
+    assert_eq!(hr.get_end().1, "");
 }
 
 #[test]
-fn test_find_incremental() -> Res<()> {
+fn test_find_incremental() {
     let source = "<body><div><p>a</p><p>b</p></div></body>";
-    let mut div = Tag::get_first(source, "div")?.unwrap().iter()?;
-    assert_eq!(div.next_by_tag(&[])?.unwrap().name, "p"); // first p with a
-    assert_eq!(div.next_by_tag(&[])?.unwrap().name, "p"); // closig
-    assert_eq!(div.next_by_tag(&[])?.unwrap().name, "p"); // second p with b
-    assert_eq!(div.next_by_tag(&[])?.unwrap().name, "p"); // closing
-    assert_eq!(div.next_by_tag(&[])?.unwrap().name, "div"); // closing div
-    assert_eq!(div.next_by_tag(&[])?, None);
-    Ok(())
+    let mut div = Tag::get_first(source, "div").unwrap().iter();
+    assert_eq!(div.next_by_tag(&[]).unwrap().name, "p"); // first p with a
+    assert_eq!(div.next_by_tag(&[]).unwrap().name, "p"); // closig
+    assert_eq!(div.next_by_tag(&[]).unwrap().name, "p"); // second p with b
+    assert_eq!(div.next_by_tag(&[]).unwrap().name, "p"); // closing
+    assert_eq!(div.next_by_tag(&[]).unwrap().name, "div"); // closing div
+    assert_eq!(div.next_by_tag(&[]), None);
 }

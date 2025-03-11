@@ -1,7 +1,19 @@
-use crate::{chapters::{self, Role}, 死};
+use crate::{
+    chapters::{self, Role},
+    epub::Epub,
+    error::即死,
+};
 
 fn is_index(name: &str) -> bool {
-    ["表紙", "目次", "ＣＯＮＴＥＮＴＳ", "contents", "Contents", "CONTENTS"].contains(&name)
+    [
+        "表紙",
+        "目次",
+        "ＣＯＮＴＥＮＴＳ",
+        "contents",
+        "Contents",
+        "CONTENTS",
+    ]
+    .contains(&name)
 }
 
 fn is_afterword(name: &str) -> bool {
@@ -24,6 +36,10 @@ fn is_copyright(name: &str) -> bool {
     ["奥付"].contains(&name)
 }
 
+fn anything_goes(_: &str) -> bool {
+    true
+}
+
 fn assumed_order(r: Role) -> usize {
     match r {
         Role::Cover => 0,
@@ -38,27 +54,28 @@ fn assumed_order(r: Role) -> usize {
     }
 }
 
-fn anything_goes(_: &str) -> bool {
-    true
-}
-
 pub fn guess_role(chapters: &[chapters::Chapter], name: &str) -> Role {
     let highest = chapters.last().map(|c| c.role).unwrap_or(Role::Cover);
     let tests = [
-        (is_cover as fn(&str) -> bool, Role::Cover),
-        (is_index, Role::Index),
-        (is_prologue, Role::Prologue),
-        (is_epilogue, Role::Epilogue),
-        (is_afterword, Role::Afterword),
-        (is_copyright, Role::Copyright),
-        (anything_goes, Role::Main),
-        (anything_goes, Role::BonusChapter),
-        (anything_goes, Role::Extra)];
-    for (test, role) in tests {
+        (true, is_cover as fn(&str) -> bool, Role::Cover),
+        (true, is_index, Role::Index),
+        (true, is_prologue, Role::Prologue),
+        (true, is_epilogue, Role::Epilogue),
+        (true, is_afterword, Role::Afterword),
+        (true, is_copyright, Role::Copyright),
+        (false, anything_goes, Role::Main),
+        (false, anything_goes, Role::BonusChapter),
+        (false, anything_goes, Role::Extra),
+    ];
+    for (reliable, test, role) in tests {
         let matches = test(name);
         if assumed_order(role) < assumed_order(highest) {
-            if matches {
-                死!("Chapter {name} is out of order");
+            if reliable && matches {
+                即死!(
+                    "Chapter {name} is out of order with role {}: {:?}",
+                    role,
+                    chapters
+                );
             }
             continue;
         }
@@ -66,12 +83,17 @@ pub fn guess_role(chapters: &[chapters::Chapter], name: &str) -> Role {
             return role;
         }
     }
-    死!("No role found for chapter: {name}");
+    即死!("No role found for chapter: {name}");
 }
 
 pub fn is_skip(role: Role) -> bool {
     match role {
         Role::Cover | Role::Index | Role::Afterword | Role::Extra | Role::Copyright => true,
-        Role::Prologue |  Role::Main | Role::Epilogue | Role::BonusChapter => false,
+        Role::Prologue | Role::Main | Role::Epilogue | Role::BonusChapter => false,
     }
+}
+
+pub fn guess_book_name(epub: &Epub) -> String {
+    let title = epub.title.to_owned();
+    title.replace("【電子書籍限定書き下ろしSS付き】", "")
 }
