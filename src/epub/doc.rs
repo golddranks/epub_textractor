@@ -29,7 +29,7 @@ impl Display for DocError {
 
 impl Error for DocError {}
 
-pub fn get_manifest(source: &str) -> Res<HashMap<&str, &str>> {
+pub fn get_manifest(source: &str) -> Res<HashMap<String, String>> {
     let mut id_map = HashMap::new();
     let mut manifest = Tag::get_first(source, "manifest")?
         .ok_or(DocError::Unschematic)?
@@ -37,19 +37,19 @@ pub fn get_manifest(source: &str) -> Res<HashMap<&str, &str>> {
     while let Some(item) = manifest.next_by_tag(&["item"])? {
         let id = item.get_attr("id")?.ok_or(DocError::Unschematic)?;
         let href = item.get_attr("href")?.ok_or(DocError::Unschematic)?;
-        id_map.insert(id, href);
+        id_map.insert(id.to_owned(), href.to_owned());
     }
     Ok(id_map)
 }
 
-pub fn get_spine(source: &str) -> Res<Vec<&str>> {
+pub fn get_spine(source: &str) -> Res<Vec<String>> {
     let mut idrefs = Vec::new();
     let mut spine = Tag::get_first(source, "spine")?
         .ok_or(DocError::Unschematic)?
         .iter()?;
     while let Some(item) = spine.next_by_tag(&["itemref"])? {
         let idref = item.get_attr("idref")?.ok_or(DocError::Unschematic)?;
-        idrefs.push(idref);
+        idrefs.push(idref.to_owned());
     }
 
     Ok(idrefs)

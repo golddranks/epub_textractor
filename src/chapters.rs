@@ -1,15 +1,60 @@
-use std::{collections::HashMap, io::Write, ops::Range, path::Path};
+use std::{io::Write, ops::Range, path::Path};
 
 use crate::{
-    error::{OptionOrDie, ResultOrDie},
-    死,
+    epub::Epub, error::{OptionOrDie, ResultOrDie}, heuristics, 死
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Cover,
+    Index,
+    Prologue,
+    Main ,
+    Epilogue,
+    BonusChapter,
+    Afterword,
+    Extra,
+    Copyright,
+}
+
+impl Role {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "cover" => Role::Cover,
+            "index" => Role::Index,
+            "prologue" => Role::Prologue,
+            "main" => Role::Main,
+            "epilogue" => Role::Epilogue,
+            "bonus_chapter" => Role::BonusChapter,
+            "afterword" => Role::Afterword,
+            "extra" => Role::Extra,
+            "copyright" => Role::Copyright,
+            _ => 死!("Invalid role: {s}"),
+        }
+    }
+
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Role::Cover => "cover",
+            Role::Index => "index",
+            Role::Prologue => "prologue",
+            Role::Main => "main",
+            Role::Epilogue => "epilogue",
+            Role::BonusChapter => "bonus_chapter",
+            Role::Afterword => "afterword",
+            Role::Extra => "extra",
+            Role::Copyright => "copyright",
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct Chapter {
     pub name: String,
     pub idxs: Range<usize>,
     pub files: Vec<String>,
+    pub role: Role,
     pub skip: bool,
 }
 
@@ -22,30 +67,33 @@ pub fn read_chapters(chapters_fname: &Path) -> Option<Vec<Chapter>> {
         let mut fields = line.split(':');
         let name = fields
             .next()
-            .or_die(|| 死!("Invalid chapters file"))
+            .or_die(|| 死!("Invalid name field in chapters file"))
             .to_owned();
-        let skip = fields.next().or_die(|| 死!("Invalid chapters file"));
+        let role = fields.next().or_die(|| 死!("Invalid role field in chapters file"));
+        let skip: &str = fields.next().or_die(|| 死!("Invalid skip field in chapters file"));
+        let skip = match skip {
+            "SKIP" => true,
+            "TAKE" => false,
+            _ => 死!("Invalid skip field in chapters file"),
+        };
         let idx_start: usize = fields
             .next()
-            .or_die(|| 死!("Invalid chapters file"))
+            .or_die(|| 死!("Invalid idx_start field in chapters file"))
             .parse()
-            .or_die(|e| 死!("Invalid chapters file: {e}"));
+            .or_die(|e| 死!("Invalid idx_start field in chapters file: {e}"));
         let idx_end: usize = fields
             .next()
-            .or_die(|| 死!("Invalid chapters file"))
+            .or_die(|| 死!("Invalid idx_end field in chapters file"))
             .parse()
-            .or_die(|e| 死!("Invalid chapters file: {e}"));
+            .or_die(|e| 死!("Invalid idx_end field in chapters file: {e}"));
         let files = fields.map(ToOwned::to_owned).collect();
 
         chapters.push(Chapter {
             name,
             idxs: idx_start..idx_end,
             files,
-            skip: match skip {
-                "SKIP" => true,
-                "TAKE" => false,
-                _ => 死!("Invalid chapters file"),
-            },
+            role: Role::from_str(role),
+            skip
         });
     }
     Some(chapters)
@@ -54,11 +102,11 @@ pub fn read_chapters(chapters_fname: &Path) -> Option<Vec<Chapter>> {
 pub fn write_chapters(chapters: &[Chapter], mut file: impl Write) {
     for chapter in chapters {
         write!(file, "{}", chapter.name).or_die(|e| 死!(e));
-        if chapter.skip {
-            write!(file, ":SKIP").or_die(|e| 死!(e));
-        } else {
-            write!(file, ":TAKE").or_die(|e| 死!(e));
-        }
+        write!(file, ":{}", chapter.role.to_str()).or_die(|e| 死!(e));
+        write!(file, ":{}", match chapter.skip {
+            true => "SKIP",
+            false => "TAKE",
+        }).or_die(|e| 死!(e));
         write!(file, ":{}:{}", chapter.idxs.start, chapter.idxs.end).or_die(|e| 死!(e));
         for fname in &chapter.files {
             write!(file, ":{}", fname).or_die(|e| 死!(e));
@@ -67,69 +115,39 @@ pub fn write_chapters(chapters: &[Chapter], mut file: impl Write) {
     }
 }
 
-fn generate(
-    chapters: &mut Vec<Chapter>,
-    name: &str,
-    idxs: Range<usize>,
-    texts: &[(String, String)],
-    atogaki_seen: &mut bool,
-) {
-    let mut skip = false;
-    let mut files = Vec::new();
-    if idxs.end < idxs.start {
-        skip = true;
-    } else {
-        files = texts[idxs.clone()]
-            .iter()
-            .map(|(fname, _)| fname.to_owned())
-            .collect();
-    }
-    match &*name {
-        "表紙" | "目次" | "ＣＯＮＴＥＮＴＳ" | "contents" | "Contents" | "CONTENTS" => {
-            skip = true;
-        }
-        "あとがき" | "後書き" | "後書" => {
-            *atogaki_seen = true;
-            skip = true;
-        }
-        _ if *atogaki_seen => skip = true,
-        _ => (),
-    }
-    chapters.push(Chapter {
-        name: name.to_owned(),
-        idxs,
-        files,
-        skip,
-    })
-}
-
-pub fn update_chapters(
-    chapters: &mut Vec<Chapter>,
-    toc: &[(String, String)],
-    hrefs: &HashMap<&str, usize>,
-    texts: &[(String, String)],
-) {
-    let mut atogaki_seen = false;
-    if chapters.len() == 0 {
-        for chapter in toc.windows(2) {
-            let [current, next] = chapter else {
-                unreachable!()
-            };
-            let start_idx = hrefs.get(&*current.1).unwrap_or(&0);
-            let end_idx = hrefs.get(&*next.1).unwrap_or(&0);
-            let idxs = *start_idx..*end_idx;
-            generate(chapters, &current.0, idxs, texts, &mut atogaki_seen);
-        }
-        let Some(last) = toc.last() else {
-            死!("no chapters?")
+pub fn generate(
+    epub: &Epub,
+) -> Vec<Chapter> {
+    let mut chapters = Vec::new();
+    let Epub { hrefs, toc, spine, .. } = epub;
+    for chapter in toc.windows(2) {
+        let [(name, href), (_, next_href)] = chapter else {
+            unreachable!()
         };
-        let start_idx = hrefs.get(&*last.1).or_die(|| 死!("no href found?"));
-        generate(
-            chapters,
-            &last.0,
-            *start_idx..texts.len(),
-            texts,
-            &mut atogaki_seen,
-        );
+        let start_idx = hrefs.get(href).unwrap_or(&0);
+        let end_idx = hrefs.get(next_href).unwrap_or(&0);
+        let idxs = *start_idx..*end_idx;
+        let role = heuristics::guess_role(&chapters, name);
+        chapters.push(Chapter{
+            name: name.to_owned(),
+            idxs: idxs.clone(),
+            files: spine.get(idxs.clone()).or_die(|| 死!("weird order of files in TOC!")).to_owned(),
+            role,
+            skip: heuristics::is_skip(role)
+        });
     }
+    let Some((name, href)) = toc.last() else {
+        死!("no chapters?")
+    };
+    let start_idx = hrefs.get(href).or_die(|| 死!("no href found?"));
+    let idxs = *start_idx..spine.len();
+    let role = heuristics::guess_role(&chapters, name);
+    chapters.push(Chapter{
+        name: name.to_owned(),
+        idxs: idxs.clone(),
+        files: spine[idxs].to_owned(),
+        role,
+        skip: heuristics::is_skip(role)
+    });
+    chapters
 }
