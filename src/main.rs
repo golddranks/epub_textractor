@@ -1,12 +1,16 @@
-use std::{fs::File, io::Write, path::PathBuf, process::exit};
+use std::{
+    collections::HashMap,
+    fs::{File, create_dir_all},
+    io::Write,
+    path::Path,
+    process::exit,
+};
 
-use books::Book;
 use chapters::Chapter;
 use epub::Epub;
 use error::{OrDie, 即死, 死};
 use global_str::GlobalStr;
 
-mod books;
 mod chapters;
 mod epub;
 mod error;
@@ -19,54 +23,34 @@ mod yomi;
 static EPUB_FNAME: GlobalStr = GlobalStr::new();
 static PHASE: GlobalStr = GlobalStr::new();
 
-pub fn prepare() -> (Epub, Vec<(Book, Vec<Chapter>)>) {
-    let epub_fname = PathBuf::from(EPUB_FNAME.get());
-    let mut file = File::open(&epub_fname).or_(死!("failed to open EPUB file"));
+pub fn prepare(epub_fname: &Path, output_path: &Path) -> (Epub, Vec<Chapter>) {
+    let mut file = File::open(epub_fname).or_(死!("failed to open EPUB file"));
     let epub = Epub::new(&mut file);
 
-    let books_fname = epub_fname.with_extension("books");
-    let books = books::read(&books_fname).unwrap_or_else(|| {
-        eprintln!("No books file found. Generating books.");
-        let books = books::generate(&epub);
-        books::write(&books, &books_fname);
-        books
+    let chapters_fname = output_path.join("chapters.txt");
+    let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
+        eprintln!("No chapters file found. Generating chapters.");
+        let chapters = chapters::generate(&epub);
+        chapters::write(&chapters, &chapters_fname);
+        chapters
     });
 
-    let mut book_chapters = Vec::new();
-
-    for book in books {
-        let chapters_fname = epub_fname
-            .with_file_name(&book.name)
-            .with_extension("chaps");
-        let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
-            eprintln!("No chapters file found. Generating chapters.");
-            let chapters = chapters::generate(&epub);
-            chapters::write(&chapters, &chapters_fname);
-            chapters
-        });
-        book_chapters.push((book, chapters));
-    }
-
-    (epub, book_chapters)
+    (epub, chapters)
 }
 
-pub fn run(epub: Epub, chapters: impl Iterator<Item = Chapter>) {
-    let epub_fname = PathBuf::from(EPUB_FNAME.get());
-    let txt_fname = epub_fname.with_extension("txt");
-    let gaiji_fname = epub_fname.with_extension("gaiji");
-    let yomi_fname = epub_fname.with_extension("yomi");
+pub fn output_book(
+    epub: &Epub,
+    chapters: &[Chapter],
+    gaiji: &mut HashMap<String, char>,
+    output_path: &Path,
+) {
+    let book_name = &chapters[0].book_name;
+    let txt_fname = output_path.join(book_name).with_extension("txt");
+    let yomi_fname = output_path.join(book_name).with_extension("ruby.yomi");
 
-    let mut gaiji = gaiji::read(&gaiji_fname).unwrap_or_default();
-    let gaiji_orig_size = gaiji.len();
-
-    let (txt, yomi) = txt::produce_txt_yomi(&mut gaiji, &epub, chapters);
+    let (txt, yomi) = txt::produce_txt_yomi(gaiji, epub, chapters);
     let mut txt_file = File::create(&txt_fname).or_(死!());
     txt_file.write_all(txt.as_bytes()).or_(死!());
-
-    if gaiji_orig_size != gaiji.len() {
-        eprintln!("New gaiji found! Updating/creating the gaiji file.");
-        gaiji::write_gaiji(&gaiji, &gaiji_fname);
-    }
 
     let yomi_file = File::create(&yomi_fname).or_(死!());
     yomi::write_yomi(&yomi, yomi_file, &txt);
@@ -79,12 +63,26 @@ fn main() {
         exit(1);
     };
 
-    EPUB_FNAME.set(epub_fname);
+    EPUB_FNAME.set(&epub_fname);
     PHASE.set("start");
 
-    let (_epub, book_chapters) = prepare();
-    for (_book, chapters) in book_chapters {
-        let _chapters = chapters.into_iter().filter(|c| !c.skip);
-        //run(epub, chapters); // TODO
+    let epub_fname = Path::new(&epub_fname);
+    let output_path = Path::new(epub_fname).with_extension("");
+    create_dir_all(&output_path).or_(死!("failed to create output directory"));
+
+    let (_epub, chapters) = prepare(epub_fname, &output_path);
+
+    let gaiji_fname = output_path.join("gaiji.txt");
+    let gaiji = gaiji::read(&gaiji_fname).unwrap_or_default();
+    let gaiji_orig_size = gaiji.len();
+
+    let books = chapters.chunk_by(|a, b| a.book_name == b.book_name);
+    for _chapters in books {
+        //output_book(&epub, chapters, &mut gaiji, &output_path); // TODO
+    }
+
+    if gaiji_orig_size != gaiji.len() {
+        eprintln!("New gaiji found! Updating/creating the gaiji file.");
+        gaiji::write_gaiji(&gaiji, &gaiji_fname);
     }
 }

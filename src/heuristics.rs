@@ -1,7 +1,8 @@
 use crate::{
     chapters::{self, Role},
     epub::Epub,
-    error::即死,
+    error::{OrDie, 即死},
+    死,
 };
 
 fn contains_any_of(name: &str, words: &[&str]) -> bool {
@@ -116,6 +117,31 @@ pub fn is_skip(role: Role) -> bool {
     }
 }
 
+fn convert_zenkaku_number(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '０'..='９' => ((c as u32 - '０' as u32) as u8 + b'0') as char,
+            _ => c,
+        })
+        .collect()
+}
+
+pub fn n_books(epub: &Epub) -> usize {
+    let title = &epub.title;
+    if title.contains("合本版") || title.contains("セット") {
+        let start_idx = title.find("全").or_(死!("No 全 found in title")) + "全".len();
+        let end_idx = title[start_idx..]
+            .find('巻')
+            .or_(死!("No 巻 found in title"))
+            + start_idx;
+        convert_zenkaku_number(&title[start_idx..end_idx])
+            .parse()
+            .or_(死!("Failed to parse number"))
+    } else {
+        1
+    }
+}
+
 pub fn guess_book_name(epub: &Epub) -> String {
     // Leaving spaces to corners to be able to catch some words separated only by spaces
     let mut title = format!(" {} ", epub.title);
@@ -130,7 +156,6 @@ pub fn guess_book_name(epub: &Epub) -> String {
                 end_idx += mid_idx;
                 let final_idx = end_idx + end.len();
                 pos = start_idx;
-                eprintln!("Remove {}", &title[start_idx..final_idx]);
                 title.replace_range(start_idx..final_idx, "");
                 continue;
             }

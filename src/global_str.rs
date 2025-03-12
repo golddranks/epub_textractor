@@ -12,10 +12,6 @@ impl GlobalStr {
         }
     }
 
-    pub fn get(&self) -> String {
-        self.str.lock().expect("shouldn't be poisoned").clone()
-    }
-
     pub fn set(&self, str: impl Into<String>) {
         *self.str.lock().expect("shouldn't be poisoned") = str.into();
     }

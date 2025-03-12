@@ -57,10 +57,7 @@ It generates the following outputs:
 
 ### Chapters
 
-- combine books with chaps
-- rename chaps -> chapters.txt
-- generate files in subdirectory
-- detect and ignore 合本版
+- detect and ignore 合本版 (left: セット)
 - improve chapter detection accuracy/fix bugs with current heuristics
 - try HMM-based chapter detection
 - try contents-based chapter detection

@@ -53,7 +53,8 @@ impl Display for Role {
 
 #[derive(Debug)]
 pub struct Chapter {
-    pub name: String,
+    pub book_name: String,
+    pub chap_name: String,
     pub idxs: Range<usize>,
     pub files: Vec<String>,
     pub role: Role,
@@ -67,9 +68,13 @@ pub fn read(fname: &Path) -> Option<Vec<Chapter>> {
     let mut chapters = Vec::new();
     for line in file.lines() {
         let mut fields = line.split(':');
-        let name = fields
+        let book_name = fields
             .next()
-            .or_(死!("Invalid name field in chapters file"))
+            .or_(死!("Invalid book name field in chapters file"))
+            .to_owned();
+        let chap_name = fields
+            .next()
+            .or_(死!("Invalid chapter name field in chapters file"))
             .to_owned();
         let role = fields
             .next()
@@ -95,7 +100,8 @@ pub fn read(fname: &Path) -> Option<Vec<Chapter>> {
         let files = fields.map(ToOwned::to_owned).collect();
 
         chapters.push(Chapter {
-            name,
+            book_name,
+            chap_name,
             idxs: idx_start..idx_end,
             files,
             role: Role::from_str(role),
@@ -108,7 +114,8 @@ pub fn read(fname: &Path) -> Option<Vec<Chapter>> {
 pub fn write(chapters: &[Chapter], fname: &Path) {
     let mut file = File::create(fname).or_(死!());
     for chapter in chapters {
-        write!(file, "{}", chapter.name).or_(死!());
+        write!(file, "{}", chapter.book_name).or_(死!());
+        write!(file, ":{}", chapter.chap_name).or_(死!());
         write!(file, ":{}", chapter.role).or_(死!());
         let skip = match chapter.skip {
             true => "SKIP",
@@ -124,6 +131,10 @@ pub fn write(chapters: &[Chapter], fname: &Path) {
 }
 
 pub fn generate(epub: &Epub) -> Vec<Chapter> {
+    if heuristics::n_books(epub) > 1 {
+        todo!("omnibus");
+    }
+    let book_name = heuristics::guess_book_name(epub);
     let mut chapters = Vec::new();
     let Epub {
         hrefs, toc, spine, ..
@@ -137,7 +148,8 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
         let idxs = *start_idx..*end_idx;
         let role = heuristics::guess_role(&chapters, name);
         chapters.push(Chapter {
-            name: name.to_owned(),
+            book_name: book_name.clone(),
+            chap_name: name.to_owned(),
             idxs: idxs.clone(),
             files: spine
                 .get(idxs.clone())
@@ -154,7 +166,8 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
     let idxs = *start_idx..spine.len();
     let role = heuristics::guess_role(&chapters, name);
     chapters.push(Chapter {
-        name: name.to_owned(),
+        book_name,
+        chap_name: name.to_owned(),
         idxs: idxs.clone(),
         files: spine[idxs].to_owned(),
         role,
