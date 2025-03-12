@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::fs::File;
 
 use crate::chapters::Chapter;
+use crate::error::OrDie;
 use crate::yomi::Yomi;
-use crate::{PHASE, 即死};
+use crate::{即死, 死, PHASE};
 
 mod doc;
 mod xhtml;
@@ -13,9 +14,8 @@ pub struct Epub {
     pub title: String,
     pub author: String,
     pub publisher: String,
-    pub texts: Vec<(String, String)>,
-    pub hrefs: HashMap<String, usize>,
-    pub spine: Vec<String>,
+    pub body: Vec<(String, String)>,
+    pub href_to_spine_idx: HashMap<String, usize>,
     pub toc: Vec<(String, String)>,
 }
 
@@ -81,33 +81,32 @@ impl Epub {
         // toc is a list of (chapter title, href) tuples, defining the starting point of each chapter
         let toc = doc::get_toc(&toc);
 
-        // hrefs is a href->idx map of the spine
-        let mut hrefs = HashMap::new();
+        // hrefs is a manifest href -> spine idx map
+        let mut href_to_spine_idx = HashMap::new();
 
-        // texts is a list of tuples of href and corresponding text file contents in the spine order
-        let mut texts = Vec::new();
+        // texts is essentially the spine, but instead of ids, it has hrefs and xhtml file contents
+        let mut body = Vec::new();
 
         for (idx, idref) in spine.iter().enumerate() {
-            let href = &manifest[idref];
-            let text_file = &files[href];
+            let href = manifest.get(idref).or_(死!("idref not found in manifest!"));
+            let text_file = files.get(href).or_(死!("href not found in zipped files!"));
             let text_string = text_file.extract_string(file);
-            hrefs.insert(href.to_owned(), idx);
-            texts.push((href.to_owned(), text_string));
+            href_to_spine_idx.insert(href.to_owned(), idx);
+            body.push((href.to_owned(), text_string));
         }
 
         Epub {
             title,
             author,
             publisher,
-            texts,
-            hrefs,
-            spine,
+            body,
+            href_to_spine_idx,
             toc,
         }
     }
 
     pub fn paragraph_iter(&self, chapter: &Chapter) -> impl Iterator<Item = Paragraph> {
-        self.texts[chapter.idxs.clone()]
+        self.body[chapter.idxs.clone()]
             .iter()
             .flat_map(|(href, passage)| doc::parse_passage(href, passage))
     }

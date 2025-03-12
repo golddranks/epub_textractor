@@ -11,6 +11,7 @@ use epub::Epub;
 use error::{OrDie, 即死, 死};
 use global_str::GlobalStr;
 
+mod markov;
 mod chapters;
 mod epub;
 mod error;
@@ -29,8 +30,8 @@ pub fn prepare(epub_fname: &Path, output_path: &Path) -> (Epub, Vec<Chapter>) {
 
     let chapters_fname = output_path.join("chapters.txt");
     let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
-        eprintln!("No chapters file found. Generating chapters.");
         let chapters = chapters::generate(&epub);
+        eprintln!("No chapters file found. Writing {chapters_fname:?}");
         chapters::write(&chapters, &chapters_fname);
         chapters
     });

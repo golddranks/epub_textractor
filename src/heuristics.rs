@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     chapters::{self, Role},
     epub::Epub,
@@ -14,7 +16,7 @@ fn contains_any_of(name: &str, words: &[&str]) -> bool {
     false
 }
 
-fn is_index(name: &str) -> bool {
+fn is_toc(name: &str) -> bool {
     contains_any_of(
         name,
         &[
@@ -29,8 +31,8 @@ fn is_index(name: &str) -> bool {
     )
 }
 
-fn is_intro(name: &str) -> bool {
-    contains_any_of(name, &["紹介"])
+fn is_before_extra(name: &str) -> bool {
+    contains_any_of(name, &["紹介", "登場人物"])
 }
 
 fn is_afterword(name: &str) -> bool {
@@ -60,15 +62,16 @@ fn anything_goes(_: &str) -> bool {
 fn assumed_order(r: Role) -> usize {
     match r {
         Role::Cover => 0,
-        Role::Intro => 1,
-        Role::Index => 2,
-        Role::Prologue => 3,
-        Role::Main => 4,
-        Role::Epilogue => 5,
-        Role::BonusChapter => 6,
-        Role::Afterword => 7,
-        Role::Extra => 8,
-        Role::Copyright => 9,
+        Role::BeforeExtra => 1,
+        Role::Foreword => 1,
+        Role::Contents => 1,
+        Role::Prologue => 2,
+        Role::Main => 3,
+        Role::Epilogue => 4,
+        Role::BonusChapter => 5,
+        Role::Afterword => 6,
+        Role::AfterExtra => 6,
+        Role::Copyright => 7,
     }
 }
 
@@ -76,15 +79,16 @@ pub fn guess_role(chapters: &[chapters::Chapter], name: &str) -> Role {
     let highest = chapters.last().map(|c| c.role).unwrap_or(Role::Cover);
     let tests = [
         (true, is_cover as fn(&str) -> bool, Role::Cover),
-        (true, is_intro, Role::Intro),
-        (true, is_index, Role::Index),
+        (true, is_before_extra, Role::BeforeExtra),
+        (true, is_toc, Role::Contents),
         (true, is_prologue, Role::Prologue),
         (true, is_epilogue, Role::Epilogue),
         (true, is_afterword, Role::Afterword),
         (true, is_copyright, Role::Copyright),
+        (false, anything_goes, Role::Foreword),
         (false, anything_goes, Role::Main),
         (false, anything_goes, Role::BonusChapter),
-        (false, anything_goes, Role::Extra),
+        (false, anything_goes, Role::AfterExtra),
     ];
     for (reliable, test, role) in tests {
         let matches = test(name);
@@ -108,10 +112,11 @@ pub fn guess_role(chapters: &[chapters::Chapter], name: &str) -> Role {
 pub fn is_skip(role: Role) -> bool {
     match role {
         Role::Cover
-        | Role::Intro
-        | Role::Index
+        | Role::BeforeExtra
+        | Role::Foreword
+        | Role::Contents
         | Role::Afterword
-        | Role::Extra
+        | Role::AfterExtra
         | Role::Copyright => true,
         Role::Prologue | Role::Main | Role::Epilogue | Role::BonusChapter => false,
     }
@@ -212,9 +217,8 @@ fn test_guess_book_name() {
         title: "転生したらばかだった【SS付き電子限定版】(hogeブックス)".to_owned(),
         author: "hoge".to_owned(),
         publisher: String::new(),
-        texts: vec![],
-        hrefs: std::collections::HashMap::new(),
-        spine: vec![],
+        body: vec![],
+        href_to_spine_idx: std::collections::HashMap::new(),
         toc: vec![],
     };
     assert_eq!(guess_book_name(&epub), "転生したらばかだった");
@@ -224,4 +228,16 @@ fn test_guess_book_name() {
 
     epub.title = "転生したらばかだった(3)【SS付き】【イラスト付き】".to_owned();
     assert_eq!(guess_book_name(&epub), "転生したらばかだった(3)");
+}
+
+/// A fault tolerant way to get the spine index by href.
+/// (Some EPUBS are buggy; they don't have everything in manifest.)
+pub fn get_spine_idx(href_to_spine_idx: &HashMap<String, usize>, toc_href: &str, name: &str) -> usize {
+    if let Some(spine_idx) = href_to_spine_idx.get(toc_href) {
+        *spine_idx
+    } else if name == "表紙" {
+        0 // for some reason, many buggy EPUBS don't have the title page in their manifest? shame on them.
+    } else {
+        即死!("no manifest href that corresponds to the TOC href {toc_href}? ({name})")
+    }
 }

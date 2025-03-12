@@ -1,33 +1,35 @@
 use std::{fmt::Display, fs::File, io::Write, iter::once, ops::Range, path::Path};
 
-use crate::{epub::Epub, error::OrDie, heuristics, 即死, 死};
+use crate::{epub::Epub, error::OrDie, heuristics, 即死, 死, PHASE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    Cover,
-    Intro,
-    Index,
-    Prologue,
-    Main,
-    Epilogue,
-    BonusChapter,
-    Afterword,
-    Extra,
-    Copyright,
+    Cover, // Cover picture
+    BeforeExtra, // Character explanations, maps, drawings etc.
+    Foreword, // Foreword
+    Contents, // Table of contents
+    Prologue, // Prologue
+    Main, // Main chapters
+    Epilogue, // Epilogue
+    BonusChapter, // Bonus content, shor stories etc.
+    Afterword, // Afterword, author's thanks etc.
+    AfterExtra, // Additional drawings, popular character contest announcements, commericals
+    Copyright, // Copyright, publisher info etc.
 }
 
 impl Role {
     pub fn from_str(s: &str) -> Self {
         match s {
             "cover" => Role::Cover,
-            "intro" => Role::Intro,
-            "index" => Role::Index,
+            "before_extra" => Role::BeforeExtra,
+            "foreword" => Role::Foreword,
+            "contents" => Role::Contents,
             "prologue" => Role::Prologue,
             "main" => Role::Main,
             "epilogue" => Role::Epilogue,
             "bonus_chapter" => Role::BonusChapter,
             "afterword" => Role::Afterword,
-            "extra" => Role::Extra,
+            "after_extra" => Role::AfterExtra,
             "copyright" => Role::Copyright,
             _ => 即死!("Invalid role: {s}"),
         }
@@ -38,14 +40,15 @@ impl Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Role::Cover => "cover",
-            Role::Intro => "intro",
-            Role::Index => "index",
+            Role::BeforeExtra => "before_extra",
+            Role::Foreword => "foreword",
+            Role::Contents => "contents",
             Role::Prologue => "prologue",
             Role::Main => "main",
             Role::Epilogue => "epilogue",
             Role::BonusChapter => "bonus_chapter",
             Role::Afterword => "afterword",
-            Role::Extra => "extra",
+            Role::AfterExtra => "after_extra",
             Role::Copyright => "copyright",
         })
     }
@@ -131,6 +134,7 @@ pub fn write(chapters: &[Chapter], fname: &Path) {
 }
 
 pub fn generate(epub: &Epub) -> Vec<Chapter> {
+    PHASE.set("generate_chapters");
     if heuristics::n_books(epub) > 1 {
         todo!("omnibus");
     }
@@ -138,30 +142,30 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
     let mut chapters = Vec::new();
 
     let Epub {
-        hrefs,
+        href_to_spine_idx,
         toc,
-        spine,
-        texts,
+        body,
         ..
     } = epub;
 
-    let other_chapters = toc.windows(2).map(|chapter| {
-        let [(name, href), (_, next_href)] = chapter else {
+    let other_chapters = toc.windows(2).map(|toc_chap| {
+        let [(name, toc_href), (_, next_toc_href)] = toc_chap else {
             unreachable!()
         };
-        let start_idx = hrefs.get(href).unwrap_or(&0);
-        let end_idx = hrefs.get(next_href).unwrap_or(&0);
-        let idxs = *start_idx..*end_idx;
+        let start_idx = heuristics::get_spine_idx(href_to_spine_idx, toc_href, name);
+        let end_idx = heuristics::get_spine_idx(href_to_spine_idx, next_toc_href, name);
+        let idxs = start_idx..end_idx;
         (name, idxs)
     });
 
-    let last_chapter = {
-        let (name, href) = toc.last().or_(死!("no chapters in TOC"));
-        let idxs = *hrefs.get(href).unwrap_or(&0)..spine.len();
+    let last_toc_chapter = {
+        let (name, toc_href) = toc.last().or_(死!("no chapters in TOC? n = {}", toc.len()));
+        let start_idx = heuristics::get_spine_idx(href_to_spine_idx, toc_href, name);
+        let idxs = start_idx..body.len();
         (name, idxs)
     };
 
-    let all_chapters = other_chapters.chain(once(last_chapter));
+    let all_chapters = other_chapters.chain(once(last_toc_chapter));
 
     for (name, idxs) in all_chapters {
         let role = heuristics::guess_role(&chapters, name);
@@ -169,9 +173,9 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
             book_name: book_name.clone(),
             chap_name: name.to_owned(),
             idxs: idxs.clone(),
-            files: texts
+            files: body
                 .get(idxs.clone())
-                .or_(死!("weird order of files in TOC!"))
+                .or_(死!("the order of files in TOC {:?} doesn't correspond to spine? ({name})", idxs))
                 .iter()
                 .map(|(href, _)| href)
                 .cloned()
