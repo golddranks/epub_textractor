@@ -1,4 +1,4 @@
-use std::{fmt::Display, fs::File, io::Write, ops::Range, path::Path};
+use std::{fmt::Display, fs::File, io::Write, iter::once, ops::Range, path::Path};
 
 use crate::{epub::Epub, error::OrDie, heuristics, 即死, 死};
 
@@ -136,42 +136,49 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
     }
     let book_name = heuristics::guess_book_name(epub);
     let mut chapters = Vec::new();
+
     let Epub {
-        hrefs, toc, spine, ..
+        hrefs,
+        toc,
+        spine,
+        texts,
+        ..
     } = epub;
-    for chapter in toc.windows(2) {
+
+    let other_chapters = toc.windows(2).map(|chapter| {
         let [(name, href), (_, next_href)] = chapter else {
             unreachable!()
         };
         let start_idx = hrefs.get(href).unwrap_or(&0);
         let end_idx = hrefs.get(next_href).unwrap_or(&0);
         let idxs = *start_idx..*end_idx;
+        (name, idxs)
+    });
+
+    let last_chapter = {
+        let (name, href) = toc.last().or_(死!("no chapters in TOC"));
+        let idxs = *hrefs.get(href).unwrap_or(&0)..spine.len();
+        (name, idxs)
+    };
+
+    let all_chapters = other_chapters.chain(once(last_chapter));
+
+    for (name, idxs) in all_chapters {
         let role = heuristics::guess_role(&chapters, name);
         chapters.push(Chapter {
             book_name: book_name.clone(),
             chap_name: name.to_owned(),
             idxs: idxs.clone(),
-            files: spine
+            files: texts
                 .get(idxs.clone())
                 .or_(死!("weird order of files in TOC!"))
-                .to_owned(),
+                .iter()
+                .map(|(href, _)| href)
+                .cloned()
+                .collect(),
             role,
             skip: heuristics::is_skip(role),
         });
     }
-    let Some((name, href)) = toc.last() else {
-        即死!("no chapters?")
-    };
-    let start_idx = hrefs.get(href).or_(死!("no href found?"));
-    let idxs = *start_idx..spine.len();
-    let role = heuristics::guess_role(&chapters, name);
-    chapters.push(Chapter {
-        book_name,
-        chap_name: name.to_owned(),
-        idxs: idxs.clone(),
-        files: spine[idxs].to_owned(),
-        role,
-        skip: heuristics::is_skip(role),
-    });
     chapters
 }

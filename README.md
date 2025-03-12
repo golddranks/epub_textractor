@@ -57,6 +57,7 @@ It generates the following outputs:
 
 ### Chapters
 
+- ensure that spine, toc and manifest and their indices/keys are bug-free and compatible
 - detect and ignore 合本版 (left: セット)
 - improve chapter detection accuracy/fix bugs with current heuristics
 - try HMM-based chapter detection
