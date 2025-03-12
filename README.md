@@ -1,23 +1,77 @@
-TODO:
+# epub_textractor
 
-In format:
+This is a tool for extracting Japanese text from EPUB books.
+It is meant for generating a base for a corpus of written Japanese.
+Features:
 
-- <img class="fit" src="../images/00004.jpeg" alt=""/>
-- <em class="calibre6">
-- <br class="calibre2"/>
-- <img class="gaiji-line" src="../images/00011.gif" alt="に濁点"/>
+- Outputs nicely formatted plaintext.
+- Detects higher-level structures (e.g., chapters), allowing auxiliary texts
+  (e.g., table of contents, copyright notices) to be skipped.
+- Parses ruby annotations and outputs them separately.
+- Detects gaiji images and supports annotation-based conversion to text.
 
-In paragraphs
+## My philosophy
 
-- <img alt="" class="img-fit" src="../images/00009.jpeg"/>
-- <a href="part0039.html#mokuji-0008" class="pcalibre4 calibre7 pcalibre3 pcalibre pcalibre1 pcalibre2">
-- <h4 id=\"heading_id_2\" class=\"calibre3\">
+This is a piece of software that I write for fun, not for work.
+Therefore, there are a bunch of idiosyncratic things.
 
-img class="fit
-class="gaiji-wide"
-class="height-1em"
+- It's a script, but written in Rust simply because I enjoy it.
+- The dependencies are minimal; I enjoy re-inventing the wheel, coding my own:
+  - ZIP file parsing (however, [miniz_oxide](https://github.com/Frommi/miniz_oxide/) is used for DEFLATE decompression)
+  - XHTML parsing
+  - Hidden Markov Model-based inference (Viterbi algorithm etc.)
+- Error handling is "succeed or die" style, with `死!` and `即死!` macros.
+  If you don't enjoy those words, you are welcome not to look at the code.
 
- <section>
- <span class=\"tcy\"> as paragraph
+If you use this software,
+I am by no means responsible or eligible for anything you do with it,
+including answering questions or technical support.
+This project is licensed under MIT/Apache-2.0.
+You are welcome to send pull requests,
+but I make no guarantees about accepting them.
 
-file not found for some chapters? 表紙
+## Usage sample:
+
+Build the tool with [Rust 1.85 or later](https://www.rust-lang.org/learn/get-started) using:
+
+```sh
+cargo build --release
+```
+
+Run the tool on a sample .epub file (not included in the repo) like this:
+
+```sh
+./target/release/epub_textractor ラノベ(サンプル文庫).epub
+```
+
+It generates the following outputs:
+
+- `./ラノベ(サンプル文庫)/` _(directory named after the .epub file)_
+- `./ラノベ(サンプル文庫)/chapters.txt` _(an index of books / chapters the .epub file contains)_
+- `./ラノベ(サンプル文庫)/gaiji.txt` _(an index of gaiji; editable for fixing gaiji by annotation)_
+- `./ラノベ(サンプル文庫)/gaiji_001.jpg` _(multiple image files that were used as gaiji)_
+- `./ラノベ(サンプル文庫)/ラノベ.txt` _(main output, named after the inferred book name)_
+- `./ラノベ(サンプル文庫)/ラノベ.ruby.yomi` _(the ruby (kanji readings) contained in the .epub)_
+
+## TODO:
+
+### Chapters
+
+- combine books with chaps
+- rename chaps -> chapters.txt
+- generate files in subdirectory
+- detect and ignore 合本版
+- improve chapter detection accuracy/fix bugs with current heuristics
+- try HMM-based chapter detection
+- try contents-based chapter detection
+- try using title tag as input for book names
+- try using TOC as input for book names
+- try using headers as input for book names
+- try using headers as input for chapter names
+- re-enable 合本版, generate multiple outputs
+
+### Contents
+
+- output gaiji pictures for easier tagging
+- fix/redesign xhtml iteration API
+- improve contents detection accuracy/fix bugs with current heuristics

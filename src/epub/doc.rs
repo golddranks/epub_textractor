@@ -323,3 +323,8 @@ pub fn get_title(source: &str) -> &str {
     let author = Tag::get_first(source, "dc:title").or_(死!("unschematic"));
     author.get_end().1
 }
+
+pub fn get_publisher(source: &str) -> &str {
+    let author = Tag::get_first(source, "dc:publisher").or_(死!("unschematic"));
+    author.get_end().1
+}

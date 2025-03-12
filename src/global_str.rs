@@ -24,6 +24,6 @@ impl GlobalStr {
 impl Display for GlobalStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = self.str.lock().expect("shouldn't be poisoned");
-        f.write_str(&*str)
+        f.write_str(&str)
     }
 }

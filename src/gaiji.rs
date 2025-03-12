@@ -22,7 +22,7 @@ pub fn read(fname: &Path) -> Option<HashMap<String, char>> {
 }
 
 pub fn write_gaiji(gaiji: &HashMap<String, char>, fname: &Path) {
-    let mut file = File::create(&fname).or_(死!());
+    let mut file = File::create(fname).or_(死!());
     for (src, &gaiji_ch) in gaiji {
         writeln!(file, "{src}:{gaiji_ch}").or_(死!())
     }

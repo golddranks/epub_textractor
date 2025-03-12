@@ -12,6 +12,7 @@ mod zip;
 pub struct Epub {
     pub title: String,
     pub author: String,
+    pub publisher: String,
     pub texts: Vec<(String, String)>,
     pub hrefs: HashMap<String, usize>,
     pub spine: Vec<String>,
@@ -68,8 +69,8 @@ impl Epub {
         let content = content.extract_string(file);
 
         let title = doc::get_title(&content).to_owned();
-
         let author = doc::get_author(&content).to_owned();
+        let publisher = doc::get_publisher(&content).to_owned();
 
         // manifest is a id->href map of the EPUB file contents (including images, style sheets, metadata etc.)
         let manifest = doc::get_manifest(&content);
@@ -97,6 +98,7 @@ impl Epub {
         Epub {
             title,
             author,
+            publisher,
             texts,
             hrefs,
             spine,

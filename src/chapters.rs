@@ -5,6 +5,7 @@ use crate::{epub::Epub, error::OrDie, heuristics, 即死, 死};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     Cover,
+    Intro,
     Index,
     Prologue,
     Main,
@@ -19,6 +20,7 @@ impl Role {
     pub fn from_str(s: &str) -> Self {
         match s {
             "cover" => Role::Cover,
+            "intro" => Role::Intro,
             "index" => Role::Index,
             "prologue" => Role::Prologue,
             "main" => Role::Main,
@@ -36,6 +38,7 @@ impl Display for Role {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Role::Cover => "cover",
+            Role::Intro => "intro",
             Role::Index => "index",
             Role::Prologue => "prologue",
             Role::Main => "main",
@@ -103,7 +106,7 @@ pub fn read(fname: &Path) -> Option<Vec<Chapter>> {
 }
 
 pub fn write(chapters: &[Chapter], fname: &Path) {
-    let mut file = File::create(&fname).or_(死!());
+    let mut file = File::create(fname).or_(死!());
     for chapter in chapters {
         write!(file, "{}", chapter.name).or_(死!());
         write!(file, ":{}", chapter.role).or_(死!());

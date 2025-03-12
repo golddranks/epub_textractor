@@ -7,10 +7,11 @@ use crate::{
 };
 
 pub struct Book {
-    name: String,
-    author: String,
-    idxs: Range<usize>,
-    files: Vec<String>,
+    pub name: String,
+    pub author: String,
+    pub publisher: String,
+    pub idxs: Range<usize>,
+    pub files: Vec<String>,
 }
 
 pub fn read(fname: &Path) -> Option<Vec<Book>> {
@@ -28,6 +29,10 @@ pub fn read(fname: &Path) -> Option<Vec<Book>> {
             .next()
             .or_(死!("Invalid author field in book file"))
             .to_owned();
+        let publisher = fields
+            .next()
+            .or_(死!("Invalid publisher field in book file"))
+            .to_owned();
         let idx_start: usize = fields
             .next()
             .or_(死!("Invalid idx_start field in chapters file"))
@@ -43,6 +48,7 @@ pub fn read(fname: &Path) -> Option<Vec<Book>> {
         books.push(Book {
             name,
             author,
+            publisher,
             idxs: idx_start..idx_end,
             files,
         });
@@ -50,10 +56,11 @@ pub fn read(fname: &Path) -> Option<Vec<Book>> {
     Some(books)
 }
 pub fn write(books: &[Book], fname: &Path) {
-    let mut file = File::create(&fname).or_(死!());
+    let mut file = File::create(fname).or_(死!());
     for book in books {
         write!(file, "{}", book.name).or_(死!());
         write!(file, ":{}", book.author).or_(死!());
+        write!(file, ":{}", book.publisher).or_(死!());
         write!(file, ":{}:{}", book.idxs.start, book.idxs.end).or_(死!());
         for fname in &book.files {
             write!(file, ":{}", fname).or_(死!());
@@ -64,10 +71,12 @@ pub fn write(books: &[Book], fname: &Path) {
 pub fn generate(epub: &Epub) -> Vec<Book> {
     let name = heuristics::guess_book_name(epub);
     let author = epub.author.to_owned();
+    let publisher = epub.publisher.to_owned();
     vec![Book {
         name,
         author,
+        publisher,
         idxs: 0..epub.texts.len(),
-        files: epub.hrefs.iter().map(|(href, _)| href.to_owned()).collect(),
+        files: epub.texts.iter().map(|(href, _)| href.to_owned()).collect(),
     }]
 }

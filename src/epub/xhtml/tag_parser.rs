@@ -52,9 +52,7 @@ fn test_parse_quotes() {
 
 pub fn parse_tag(source: &str, offset: usize) -> Option<Tag> {
     // find starting <
-    let Some(start) = source[offset..].find('<').map(|s| offset + s) else {
-        return None;
-    };
+    let start = source[offset..].find('<').map(|s| offset + s)?;
     let mut pos = start + 1;
 
     // check for closing tag marker

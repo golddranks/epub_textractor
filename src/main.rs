@@ -1,5 +1,6 @@
 use std::{fs::File, io::Write, path::PathBuf, process::exit};
 
+use books::Book;
 use chapters::Chapter;
 use epub::Epub;
 use error::{OrDie, 即死, 死};
@@ -18,7 +19,7 @@ mod yomi;
 static EPUB_FNAME: GlobalStr = GlobalStr::new();
 static PHASE: GlobalStr = GlobalStr::new();
 
-pub fn prepare() -> (Epub, Vec<chapters::Chapter>) {
+pub fn prepare() -> (Epub, Vec<(Book, Vec<Chapter>)>) {
     let epub_fname = PathBuf::from(EPUB_FNAME.get());
     let mut file = File::open(&epub_fname).or_(死!("failed to open EPUB file"));
     let epub = Epub::new(&mut file);
@@ -31,15 +32,22 @@ pub fn prepare() -> (Epub, Vec<chapters::Chapter>) {
         books
     });
 
-    let chapters_fname = epub_fname.with_extension("chaps");
-    let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
-        eprintln!("No chapters file found. Generating chapters.");
-        let chapters = chapters::generate(&epub);
-        chapters::write(&chapters, &chapters_fname);
-        chapters
-    });
+    let mut book_chapters = Vec::new();
 
-    (epub, chapters)
+    for book in books {
+        let chapters_fname = epub_fname
+            .with_file_name(&book.name)
+            .with_extension("chaps");
+        let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
+            eprintln!("No chapters file found. Generating chapters.");
+            let chapters = chapters::generate(&epub);
+            chapters::write(&chapters, &chapters_fname);
+            chapters
+        });
+        book_chapters.push((book, chapters));
+    }
+
+    (epub, book_chapters)
 }
 
 pub fn run(epub: Epub, chapters: impl Iterator<Item = Chapter>) {
@@ -74,7 +82,9 @@ fn main() {
     EPUB_FNAME.set(epub_fname);
     PHASE.set("start");
 
-    let (epub, chapters) = prepare();
-    let chapters = chapters.into_iter().filter(|c| !c.skip);
-    //run(epub, chapters);
+    let (_epub, book_chapters) = prepare();
+    for (_book, chapters) in book_chapters {
+        let _chapters = chapters.into_iter().filter(|c| !c.skip);
+        //run(epub, chapters); // TODO
+    }
 }
