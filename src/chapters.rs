@@ -1,20 +1,21 @@
 use std::{fmt::Display, fs::File, io::Write, iter::once, ops::Range, path::Path};
 
-use crate::{epub::Epub, error::OrDie, heuristics, 即死, 死, PHASE};
+use crate::{PHASE, epub::Epub, error::OrDie, heuristics, 即死, 死};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
 pub enum Role {
-    Cover, // Cover picture
-    BeforeExtra, // Character explanations, maps, drawings etc.
-    Foreword, // Foreword
-    Contents, // Table of contents
-    Prologue, // Prologue
-    Main, // Main chapters
-    Epilogue, // Epilogue
+    Cover,        // Cover picture
+    BeforeExtra,  // Character explanations, maps, drawings etc.
+    Foreword,     // Foreword
+    Contents,     // Table of contents
+    Prologue,     // Prologue
+    Main,         // Main chapters
+    Epilogue,     // Epilogue
     BonusChapter, // Bonus content, shor stories etc.
-    Afterword, // Afterword, author's thanks etc.
-    AfterExtra, // Additional drawings, popular character contest announcements, commericals
-    Copyright, // Copyright, publisher info etc.
+    Afterword,    // Afterword, author's thanks etc.
+    AfterExtra,   // Additional drawings, popular character contest announcements, commericals
+    Copyright,    // Copyright, publisher info etc.
 }
 
 impl Role {
@@ -32,6 +33,23 @@ impl Role {
             "after_extra" => Role::AfterExtra,
             "copyright" => Role::Copyright,
             _ => 即死!("Invalid role: {s}"),
+        }
+    }
+
+    pub fn from_num(n: usize) -> Self {
+        match n {
+            0 => Role::Cover,
+            1 => Role::BeforeExtra,
+            2 => Role::Foreword,
+            3 => Role::Contents,
+            4 => Role::Prologue,
+            5 => Role::Main,
+            6 => Role::Epilogue,
+            7 => Role::BonusChapter,
+            8 => Role::Afterword,
+            9 => Role::AfterExtra,
+            10 => Role::Copyright,
+            _ => 即死!("Invalid role: {n}"),
         }
     }
 }
@@ -175,7 +193,10 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
             idxs: idxs.clone(),
             files: body
                 .get(idxs.clone())
-                .or_(死!("the order of files in TOC {:?} doesn't correspond to spine? ({name})", idxs))
+                .or_(死!(
+                    "the order of files in TOC {:?} doesn't correspond to spine? ({name})",
+                    idxs
+                ))
                 .iter()
                 .map(|(href, _)| href)
                 .cloned()
