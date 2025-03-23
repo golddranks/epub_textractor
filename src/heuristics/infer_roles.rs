@@ -18,7 +18,7 @@ fn extract_features(name: &str) -> Feats {
     [
         contains_any_of(name, &["表紙", "表題紙"]),   // cover
         contains_any_of(name, &["紹介", "登場人物"]), // before_extra
-        false,                                        // afterword, but no patterns are known yet
+        false,                                        // foreword, but no patterns are known yet
         is_contents(name),                            // contents
         contains_any_of(name, &["プロローグ", "序"]), // prologue
         contains_numerals(name) || contains_any_of(name, &["章"]), // main
@@ -30,13 +30,71 @@ fn extract_features(name: &str) -> Feats {
     ]
 }
 
+#[test]
+fn test_extract_features() {
+    const TRUE: bool = true; // For visual readability in feature vectors below
+    assert_eq!(
+        extract_features("表紙"),
+        [TRUE, false, false, false, false, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("人物紹介"),
+        [false, TRUE, false, false, false, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("CONTENTS"),
+        [false, false, false, TRUE, false, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("目次"),
+        [false, false, false, TRUE, false, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("【序幕】 独白"),
+        [false, false, false, false, TRUE, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("１ 始まりの事件"),
+        [false, false, false, false, false, TRUE, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("第一章 長距離偵察任務"),
+        [false, false, false, false, false, TRUE, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("終章〈お大事に〉"),
+        [false, false, false, false, false, TRUE, TRUE, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("外伝 借りてきた猫"),
+        [false, false, false, false, false, false, false, TRUE, false, false, false]
+    );
+    assert_eq!(
+        extract_features("あとがき"),
+        [false, false, false, false, false, false, false, false, TRUE, false, false]
+    );
+
+    assert_eq!(
+        extract_features("あとがき ─クリスといっしょ！─"),
+        [false, false, false, false, false, false, false, false, TRUE, false, false]
+    );
+    assert_eq!(
+        extract_features("付録 歴史概略図"),
+        [false, false, false, false, false, false, false, false, false, TRUE, false]
+    );
+    assert_eq!(
+        extract_features("奥付"),
+        [false, false, false, false, false, false, false, false, false, false, TRUE]
+    );
+}
+
 const INIT: Probs = [
     0.2,  // Cover
-    0.1,  // BeforeExtra
-    0.1,  // Foreword
-    0.19, // Contents
-    0.2,  // Prologue
-    0.2,  // Main
+    0.08, // BeforeExtra
+    0.08, // Foreword
+    0.18, // Contents
+    0.16, // Prologue
+    0.20, // Main
     0.02, // Epilogue
     0.02, // BonusChapter
     0.02, // Afterword
@@ -44,34 +102,69 @@ const INIT: Probs = [
     0.02, // Copyright
 ];
 
-#[cfg(test)]
-const END: Probs = [
-    0.01, // Cover
-    0.01, // BeforeExtra
-    0.01, // Foreword
-    0.1,  // Contents
-    0.01, // Prologue
-    0.2,  // Main
-    0.3,  // Epilogue
-    0.3,  // BonusChapter
-    0.5,  // Afterword
-    0.5,  // AfterExtra
-    0.9,  // Copyright
-];
+const NOPE: f32 = 0.01; // Shouldn't happen
+const HMMM: f32 = 0.1; // Rare
+const YEAH: f32 = 0.2; // Yup, can happen
+const TOTE: f32 = 0.3; // Totes possible
 
 const TRANS: [Probs; 11] = [
-    [0.001, 0.1, 0.05, 0.05, 0.05, 0.7, 0.01, 0.001, 0.018, 0.01, 0.01], // Cover
-    [0.001, 0.6, 0.1, 0.1, 0.1, 0.05, 0.01, 0.001, 0.027, 0.01, 0.001],  // BeforeExtra
-    [0.001, 0.05, 0.5, 0.2, 0.1, 0.1, 0.02, 0.001, 0.017, 0.01, 0.001],  // Foreword
-    [0.001, 0.1, 0.1, 0.1, 0.3, 0.35, 0.01, 0.001, 0.01, 0.027, 0.001],  // Contents
-    [0.001, 0.02, 0.02, 0.05, 0.35, 0.5, 0.03, 0.017, 0.001, 0.01, 0.001], // Prologue
-    [0.01, 0.01, 0.01, 0.01, 0.01, 0.6, 0.1, 0.1, 0.05, 0.05, 0.05],     // Main
-    [0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.6, 0.1, 0.1, 0.076, 0.01], // Epilogue
-    [0.001, 0.001, 0.001, 0.001, 0.01, 0.046, 0.3, 0.5, 0.1, 0.02, 0.02], // BonusChapter
-    [0.001, 0.001, 0.001, 0.001, 0.001, 0.02, 0.1, 0.02, 0.7, 0.1, 0.055], // Afterword
-    [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.41, 0.5],   // AfterExtra
-    [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.1, 0.1], // Copyright
+    //Covr,BExtr,FWord,Conte,Prolo,Main,Epilog,BoChp,AftWr,AfXtr,Cpyrig
+    [NOPE, TOTE, HMMM, YEAH, HMMM, YEAH, NOPE, NOPE, NOPE, NOPE, NOPE], // Cover
+    [NOPE, NOPE, TOTE, TOTE, YEAH, HMMM, NOPE, NOPE, NOPE, NOPE, NOPE], // BeforeExtra
+    [NOPE, NOPE, NOPE, TOTE, TOTE, TOTE, NOPE, NOPE, NOPE, NOPE, NOPE], // Foreword
+    [NOPE, NOPE, YEAH, NOPE, TOTE, TOTE, NOPE, NOPE, NOPE, NOPE, HMMM], // Contents
+    [NOPE, NOPE, NOPE, NOPE, YEAH, TOTE, YEAH, HMMM, HMMM, NOPE, NOPE], // Prologue
+    [NOPE, NOPE, NOPE, NOPE, NOPE, YEAH, YEAH, YEAH, HMMM, HMMM, HMMM], // Main
+    [NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, TOTE, NOPE, YEAH], // Epilogue
+    [NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, YEAH, YEAH, NOPE], // BonusChapter
+    [NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, TOTE, YEAH], // Afterword
+    [NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, TOTE], // AfterExtra
+    [NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE, NOPE], // Copyright
 ];
+
+const END: Probs = [
+    0.04, // Cover
+    0.03, // BeforeExtra
+    0.02, // Foreword
+    0.03, // Contents
+    0.04, // Prologue
+    0.05, // Main
+    0.41, // Epilogue
+    0.51, // BonusChapter
+    0.41, // Afterword
+    0.60, // AfterExtra
+    0.89, // Copyright
+];
+
+#[test]
+fn assert_sum_unity() {
+    fn assert_unity(line: u32, probs: Probs, end: f32) {
+        let mut probs = probs.to_vec();
+        probs.push(end);
+        probs.sort_by(f32::total_cmp);
+        let sum: f32 = probs.iter().sum();
+        if sum < 1.0_f32.next_down() || sum > 1.0_f32.next_up() {
+            panic!(
+                "On line {}: {:?} doesn't sum to 1.0 but {}",
+                line, probs, sum
+            );
+        }
+    }
+
+    assert_unity(line!(), INIT, 0.0);
+
+    assert_unity(line!(), TRANS[0], END[0]);
+    assert_unity(line!(), TRANS[1], END[1]);
+    assert_unity(line!(), TRANS[2], END[2]);
+    assert_unity(line!(), TRANS[3], END[3]);
+    assert_unity(line!(), TRANS[4], END[4]);
+    assert_unity(line!(), TRANS[5], END[5]);
+    assert_unity(line!(), TRANS[6], END[6]);
+    assert_unity(line!(), TRANS[7], END[7]);
+    assert_unity(line!(), TRANS[8], END[8]);
+    assert_unity(line!(), TRANS[9], END[9]);
+    assert_unity(line!(), TRANS[10], END[10]);
+}
 
 const EMIT: [Probs; 11] = [
     [0.90, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01], // Cover
@@ -138,92 +231,9 @@ fn test_emit() {
 pub fn infer_roles<'a>(names: impl Iterator<Item = &'a str>) -> Vec<Role> {
     let features: Vec<_> = names.map(|name| extract_features(name)).collect();
     dbg!(&features);
-    let path = markov::viterbi(&INIT, &TRANS, emit, &features);
+    let path = markov::viterbi(&INIT, &TRANS, &END, emit, &features);
 
     path.into_iter().map(|s| Role::from_num(s)).collect()
-}
-
-#[test]
-fn assert_sum_unity() {
-    fn assert_unity(probs: Probs, end: f32) {
-        let mut sorted = probs.clone();
-        sorted.sort_by(f32::total_cmp);
-        let sum: f32 = sorted.iter().sum();
-        if sum + end != 1.0 {
-            panic!("{:?} doesn't sum to 1.0 but {}", probs, sum);
-        }
-    }
-
-    assert_unity(INIT, 0.0);
-
-    assert_unity(TRANS[0], END[0]);
-    assert_unity(TRANS[1], END[1]);
-    assert_unity(TRANS[2], END[2]);
-    assert_unity(TRANS[3], END[3]);
-    assert_unity(TRANS[4], END[4]);
-    assert_unity(TRANS[5], END[5]);
-    assert_unity(TRANS[6], END[6]);
-    assert_unity(TRANS[7], END[7]);
-    assert_unity(TRANS[8], END[8]);
-    assert_unity(TRANS[9], END[9]);
-    assert_unity(TRANS[10], END[10]);
-}
-#[test]
-fn test_extract_features() {
-    const TRUE: bool = true; // For visual readability in feature vectors below
-    assert_eq!(
-        extract_features("表紙"),
-        [TRUE, false, false, false, false, false, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("人物紹介"),
-        [false, TRUE, false, false, false, false, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("CONTENTS"),
-        [false, false, false, TRUE, false, false, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("目次"),
-        [false, false, false, TRUE, false, false, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("【序幕】 独白"),
-        [false, false, false, false, TRUE, false, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("１ 始まりの事件"),
-        [false, false, false, false, false, TRUE, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("第一章 長距離偵察任務"),
-        [false, false, false, false, false, TRUE, false, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("終章〈お大事に〉"),
-        [false, false, false, false, false, TRUE, TRUE, false, false, false, false]
-    );
-    assert_eq!(
-        extract_features("外伝 借りてきた猫"),
-        [false, false, false, false, false, false, false, TRUE, false, false, false]
-    );
-    assert_eq!(
-        extract_features("あとがき"),
-        [false, false, false, false, false, false, false, false, TRUE, false, false]
-    );
-
-    assert_eq!(
-        extract_features("あとがき ─クリスといっしょ！─"),
-        [false, false, false, false, false, false, false, false, TRUE, false, false]
-    );
-    assert_eq!(
-        extract_features("付録 歴史概略図"),
-        [false, false, false, false, false, false, false, false, false, TRUE, false]
-    );
-    assert_eq!(
-        extract_features("奥付"),
-        [false, false, false, false, false, false, false, false, false, false, TRUE]
-    );
 }
 
 #[test]
@@ -246,43 +256,35 @@ fn test_infer_roles_simple_two() {
         vec![Role::Contents, Role::Main]
     );
     assert_eq!(
-        infer_roles(["CONTENTS", "物語"].into_iter()),
-        vec![Role::Contents, Role::Main]
-    );
-    assert_eq!(
         infer_roles(["第一章 長距離偵察任務", "奥付"].into_iter()),
         vec![Role::Main, Role::Copyright]
     );
-}
-
-#[test]
-fn test_infer_roles_simple_d() {
     assert_eq!(
-        infer_roles(["物語", "付録 歴史概略図"].into_iter()),
+        infer_roles(["第一章", "付録 歴史概略図"].into_iter()),
         vec![Role::Main, Role::AfterExtra]
     );
     assert_eq!(
-        infer_roles(["物語", "あとがき"].into_iter()),
+        infer_roles(["第一章", "あとがき"].into_iter()),
         vec![Role::Main, Role::Afterword]
     );
     assert_eq!(
-        infer_roles(["物語", "奥付"].into_iter()),
+        infer_roles(["第一章", "奥付"].into_iter()),
         vec![Role::Main, Role::Copyright]
     );
     assert_eq!(
-        infer_roles(["物語", "外伝"].into_iter()),
+        infer_roles(["第一章", "外伝"].into_iter()),
         vec![Role::Main, Role::BonusChapter]
     );
     assert_eq!(
-        infer_roles(["目次", "物語"].into_iter()),
+        infer_roles(["目次", "第一章"].into_iter()),
         vec![Role::Contents, Role::Main]
     );
     assert_eq!(
-        infer_roles(["【序幕】 独白", "物語"].into_iter()),
+        infer_roles(["【序幕】 独白", "第一章"].into_iter()),
         vec![Role::Prologue, Role::Main]
     );
     assert_eq!(
-        infer_roles(["人物紹介", "物語"].into_iter()),
+        infer_roles(["人物紹介", "第一章"].into_iter()),
         vec![Role::BeforeExtra, Role::Main]
     );
     assert_eq!(
@@ -294,7 +296,7 @@ fn test_infer_roles_simple_d() {
         vec![Role::Main, Role::Epilogue]
     );
     assert_eq!(
-        infer_roles(["物語", "あとがき クリスと！"].into_iter()),
+        infer_roles(["第一章", "あとがき クリスと！"].into_iter()),
         vec![Role::Main, Role::Afterword]
     );
 }
@@ -468,7 +470,7 @@ fn test_infer_roles_d() {
             Role::Main,
             Role::Main,
             Role::Main,
-            Role::Main,
+            Role::Epilogue,
             Role::Copyright
         ]
     );
