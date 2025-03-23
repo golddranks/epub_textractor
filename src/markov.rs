@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 pub fn viterbi<'a, const S: usize, O>(
     init: &[f32; S],
     trans: &[[f32; S]; S],
@@ -5,30 +7,21 @@ pub fn viterbi<'a, const S: usize, O>(
     emit: impl Fn(&'a O) -> [f32; S],
     obs: &'a [O],
 ) -> Vec<usize> {
-    assert!(obs.len() > 0);
+    assert!(obs.is_empty().not());
     let mut prob = vec![[0.0; S]; obs.len()];
     let mut prev = vec![[0; S]; obs.len()];
 
     let emissions = emit(&obs[0]);
-    dbg!(&emissions);
     for s in 0..S {
         prob[0][s] = init[s] * emissions[s];
     }
-    dbg!(&prob);
 
     for t in 1..obs.len() {
         let emissions = emit(&obs[t]);
-        dbg!(&emissions);
         for s in 0..S {
             for r in 0..S {
                 let new_prob = prob[t - 1][r] * trans[r][s] * emissions[s];
-                if s == 9 {
-                    dbg!(t, s, r, prob[t][s], new_prob);
-                }
                 if new_prob > prob[t][s] {
-                    if s == 9 {
-                        dbg!("updated prob");
-                    }
                     prob[t][s] = new_prob;
                     prev[t][s] = r;
                 }
@@ -47,11 +40,7 @@ pub fn viterbi<'a, const S: usize, O>(
         }
     }
 
-    dbg!(&prob);
-    dbg!(&prev);
-
     let mut path = vec![0; obs.len()];
-    dbg!(end_prev);
 
     path[obs.len() - 1] = end_prev;
     for t in (0..obs.len() - 1).rev() {

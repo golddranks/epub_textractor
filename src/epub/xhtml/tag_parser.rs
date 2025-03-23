@@ -56,7 +56,7 @@ pub fn parse_tag(source: &str, offset: usize) -> Option<Tag> {
     let mut pos = start + 1;
 
     // check for closing tag marker
-    let closing_tag = source[pos..].as_bytes()[0] == b'/';
+    let closing_tag = source.as_bytes()[pos] == b'/';
     if closing_tag {
         pos += 1;
     }

@@ -1,6 +1,11 @@
 use std::{fmt::Display, fs::File, io::Write, iter::once, ops::Range, path::Path};
 
-use crate::{PHASE, epub::Epub, error::OrDie, heuristics, 即死, 死};
+use crate::{
+    PHASE, SEP,
+    epub::{Epub, Meta},
+    error::OrDie,
+    heuristics, 即死, 死,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -10,9 +15,11 @@ pub enum Role {
     Foreword,     // Foreword
     Contents,     // Table of contents
     Prologue,     // Prologue
+    PartTitle,    // Part title page, section break
     Main,         // Main chapters
+    Interlude,    // Intermission, a short in-between chapter
     Epilogue,     // Epilogue
-    BonusChapter, // Bonus content, shor stories etc.
+    BonusChapter, // Bonus content, short stories etc.
     Afterword,    // Afterword, author's thanks etc.
     AfterExtra,   // Additional drawings, popular character contest announcements, commericals
     Copyright,    // Copyright, publisher info etc.
@@ -26,7 +33,9 @@ impl Role {
             "foreword" => Role::Foreword,
             "contents" => Role::Contents,
             "prologue" => Role::Prologue,
+            "part_title" => Role::PartTitle,
             "main" => Role::Main,
+            "interlude" => Role::Interlude,
             "epilogue" => Role::Epilogue,
             "bonus_chapter" => Role::BonusChapter,
             "afterword" => Role::Afterword,
@@ -43,12 +52,14 @@ impl Role {
             2 => Role::Foreword,
             3 => Role::Contents,
             4 => Role::Prologue,
-            5 => Role::Main,
-            6 => Role::Epilogue,
-            7 => Role::BonusChapter,
-            8 => Role::Afterword,
-            9 => Role::AfterExtra,
-            10 => Role::Copyright,
+            5 => Role::PartTitle,
+            6 => Role::Main,
+            7 => Role::Interlude,
+            8 => Role::Epilogue,
+            9 => Role::BonusChapter,
+            10 => Role::Afterword,
+            11 => Role::AfterExtra,
+            12 => Role::Copyright,
             _ => 即死!("Invalid role: {n}"),
         }
     }
@@ -62,7 +73,9 @@ impl Display for Role {
             Role::Foreword => "foreword",
             Role::Contents => "contents",
             Role::Prologue => "prologue",
+            Role::PartTitle => "part_title",
             Role::Main => "main",
+            Role::Interlude => "interlude",
             Role::Epilogue => "epilogue",
             Role::BonusChapter => "bonus_chapter",
             Role::Afterword => "afterword",
@@ -88,7 +101,7 @@ pub fn read(fname: &Path) -> Option<Vec<Chapter>> {
     };
     let mut chapters = Vec::new();
     for line in file.lines() {
-        let mut fields = line.split(':');
+        let mut fields = line.split(SEP);
         let book_name = fields
             .next()
             .or_(死!("Invalid book name field in chapters file"))
@@ -136,14 +149,14 @@ pub fn write(chapters: &[Chapter], fname: &Path) {
     let mut file = File::create(fname).or_(死!());
     for chapter in chapters {
         write!(file, "{}", chapter.book_name).or_(死!());
-        write!(file, ":{}", chapter.chap_name).or_(死!());
-        write!(file, ":{}", chapter.role).or_(死!());
+        write!(file, "{SEP}{}", chapter.chap_name).or_(死!());
+        write!(file, "{SEP}{}", chapter.role).or_(死!());
         let skip = match chapter.skip {
             true => "SKIP",
             false => "TAKE",
         };
-        write!(file, ":{}", skip).or_(死!());
-        write!(file, ":{}:{}", chapter.idxs.start, chapter.idxs.end).or_(死!());
+        write!(file, "{SEP}{}", skip).or_(死!());
+        write!(file, "{SEP}{}{SEP}{}", chapter.idxs.start, chapter.idxs.end).or_(死!());
         for fname in &chapter.files {
             write!(file, ":{}", fname).or_(死!());
         }
@@ -151,12 +164,11 @@ pub fn write(chapters: &[Chapter], fname: &Path) {
     }
 }
 
-pub fn generate(epub: &Epub) -> Vec<Chapter> {
+pub fn generate(epub: &Epub, meta: &Meta) -> Vec<Chapter> {
     PHASE.set("generate_chapters");
-    if heuristics::n_books(epub) > 1 {
-        todo!("omnibus");
+    if heuristics::n_books(&meta.title) > 1 {
+        eprintln!("omnibus TODO");
     }
-    let book_name = heuristics::guess_book_name(epub);
     let mut chapters = Vec::new();
 
     let Epub {
@@ -189,7 +201,7 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
 
     for ((name, idxs), role) in all_chapters.zip(roles) {
         chapters.push(Chapter {
-            book_name: book_name.clone(),
+            book_name: meta.title.clone(),
             chap_name: name.to_owned(),
             idxs: idxs.clone(),
             files: body

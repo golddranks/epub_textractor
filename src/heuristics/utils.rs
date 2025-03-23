@@ -1,8 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Not};
 
 use crate::{
     chapters::Role,
-    epub::Epub,
     error::{OrDie, 即死, 死},
 };
 
@@ -21,36 +20,69 @@ pub fn is_skip(role: Role) -> bool {
         | Role::BeforeExtra
         | Role::Foreword
         | Role::Contents
+        | Role::PartTitle
         | Role::Afterword
         | Role::AfterExtra
         | Role::Copyright => true,
-        Role::Prologue | Role::Main | Role::Epilogue | Role::BonusChapter => false,
+        Role::Prologue | Role::Main | Role::Interlude | Role::Epilogue | Role::BonusChapter => {
+            false
+        }
     }
 }
 
-pub fn contains_numerals(s: &str) -> bool {
+pub fn normalize_alphabet(s: &str) -> String {
     s.chars()
-        .map(convert_kanji_numerals)
         .map(convert_zenkaku)
-        .find(|c| c.is_digit(10))
-        .is_some()
+        .map(|c| c.to_ascii_lowercase())
+        .filter(|c| c.is_ascii_whitespace().not())
+        .collect()
 }
 
-pub fn convert_kanji_numerals(c: char) -> char {
+#[test]
+fn test_normalize_alphabet() {
+    assert_eq!(normalize_alphabet("Ｃｏｎｔｅｎｔ"), "content");
+    assert_eq!(normalize_alphabet("目 次"), "目次");
+    assert_eq!(normalize_alphabet("EPILOGUE"), "epilogue");
+}
+
+pub fn contains_numerals(s: &str) -> bool {
+    s.chars().map(convert_rare_numerals).any(|c| {
+        c.is_ascii_digit() || matches!(c, 'Ⅹ'..='Ⅻ' | 'I' | 'V' | 'X' | '十' | '拾' | '什')
+    })
+}
+
+pub fn convert_rare_numerals(c: char) -> char {
     match c {
+        'Ⅰ'..='Ⅸ' => ((c as u32 - 'Ⅰ' as u32) as u8 + b'1') as char,
+        '１'..='９' => ((c as u32 - '１' as u32) as u8 + b'1') as char,
+        '①'..='⑨' => ((c as u32 - '①' as u32) as u8 + b'1') as char,
+        '❶'..='❾' => ((c as u32 - '❶' as u32) as u8 + b'1') as char,
         '零' => '0',
         '一' | '壱' => '1',
         '二' | '弍' => '2',
         '三' | '参' => '3',
-        '四' => '4',
+        '四' | '肆' => '4',
         '五' | '伍' => '5',
         '六' | '陸' => '6',
         '七' | '漆' | '質' => '7',
         '八' | '捌' => '8',
         '九' | '玖' => '9',
-        '十' | '拾' | '什' => '0',
         _ => c,
     }
+}
+
+#[test]
+fn test_convert_rare_numerals() {
+    assert_eq!(convert_rare_numerals('Ⅰ'), '1');
+    assert_eq!(convert_rare_numerals('Ⅸ'), '9');
+    assert_eq!(convert_rare_numerals('１'), '1');
+    assert_eq!(convert_rare_numerals('９'), '9');
+    assert_eq!(convert_rare_numerals('❶'), '1');
+    assert_eq!(convert_rare_numerals('❾'), '9');
+    assert_eq!(convert_rare_numerals('①'), '1');
+    assert_eq!(convert_rare_numerals('⑨'), '9');
+    assert_eq!(convert_rare_numerals('一'), '1');
+    assert_eq!(convert_rare_numerals('九'), '9');
 }
 
 pub fn convert_zenkaku(c: char) -> char {
@@ -83,8 +115,7 @@ fn test_convert_zenkaku() {
     );
 }
 
-pub fn n_books(epub: &Epub) -> usize {
-    let title = &epub.title;
+pub fn n_books(title: &str) -> usize {
     if title.contains("合本版") || title.contains("セット") {
         let start_idx = title.find("全").or_(死!("No 全 found in title")) + "全".len();
         let end_idx = title[start_idx..]

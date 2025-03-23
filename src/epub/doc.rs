@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Not;
 
@@ -8,8 +9,8 @@ use crate::error::{OrDie, 即死, 死};
 use crate::yomi::Yomi;
 
 use super::Paragraph;
-use super::xhtml::TType;
 use super::xhtml::iter::TagIter;
+use super::xhtml::{TType, de_entitify};
 
 pub fn get_manifest(source: &str) -> HashMap<String, String> {
     let mut id_map = HashMap::new();
@@ -314,17 +315,34 @@ fn test_parse_paragraph_2() {
     body.step_out(&p).unwrap();
 }
 
-pub fn get_author(source: &str) -> &str {
+pub fn get_author(source: &str) -> Cow<'_, str> {
     let author = Tag::get_first(source, "dc:creator").or_(死!("unschematic"));
-    author.get_end().1
+    de_entitify(author.get_end().1)
 }
 
-pub fn get_title(source: &str) -> &str {
-    let author = Tag::get_first(source, "dc:title").or_(死!("unschematic"));
-    author.get_end().1
+pub fn get_asin(source: &str) -> Option<Cow<'_, str>> {
+    let mut metadata = Tag::get_first(source, "metadata")
+        .or_(死!("unschematic"))
+        .iter();
+    while let Some(tag) = metadata.next_by_el(&["dc:identifier"]) {
+        if let Some("MOBI-ASIN") = tag.get_attr("opf:scheme") {
+            return Some(de_entitify(tag.get_end().1));
+        }
+    }
+    None
 }
 
-pub fn get_publisher(source: &str) -> &str {
-    let author = Tag::get_first(source, "dc:publisher").or_(死!("unschematic"));
-    author.get_end().1
+pub fn get_title(source: &str) -> Cow<'_, str> {
+    let title = Tag::get_first(source, "dc:title").or_(死!("unschematic"));
+    de_entitify(title.get_end().1)
+}
+
+pub fn get_publisher(source: &str) -> Cow<'_, str> {
+    let publisher = Tag::get_first(source, "dc:publisher").or_(死!("unschematic"));
+    de_entitify(publisher.get_end().1)
+}
+
+pub fn get_date(source: &str) -> Cow<'_, str> {
+    let date = Tag::get_first(source, "dc:date").or_(死!("unschematic"));
+    de_entitify(date.get_end().1)
 }

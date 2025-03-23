@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 pub mod iter;
 mod tag_parser;
@@ -138,4 +138,42 @@ fn test_find_incremental() {
     assert_eq!(div.next_by_tag(&[]).unwrap().name, "p"); // closing
     assert_eq!(div.next_by_tag(&[]).unwrap().name, "div"); // closing div
     assert_eq!(div.next_by_tag(&[]), None);
+}
+
+pub fn de_entitify(s: &str) -> Cow<'_, str> {
+    let mut pos = 0;
+    if let Some(idx) = s[pos..].find('&') {
+        pos = idx;
+    } else {
+        return Cow::Borrowed(s);
+    }
+    let mut output = String::with_capacity(s.len());
+    while let Some(idx) = s[pos..].find('&') {
+        output.push_str(&s[pos..pos + idx]);
+        pos += idx + 1;
+        if s[pos..].starts_with("amp;") {
+            output.push('&');
+            pos += "amp;".len();
+        } else if s[pos..].starts_with("lt;") {
+            output.push('<');
+            pos += "lt;".len();
+        } else if s[pos..].starts_with("gt;") {
+            output.push('>');
+            pos += "gt;".len();
+        } else {
+            output.push('&');
+        }
+    }
+    output.push_str(&s[pos..]);
+    Cow::Owned(output)
+}
+
+#[test]
+fn test_de_entiftify() {
+    assert_eq!(de_entitify("test test"), "test test");
+    assert_eq!(de_entitify("test &amp; test"), "test & test");
+    assert_eq!(de_entitify("test &lt; test"), "test < test");
+    assert_eq!(de_entitify("test &gt; test"), "test > test");
+    assert_eq!(de_entitify("test & gt; test"), "test & gt; test");
+    assert_eq!(de_entitify("test &gt;&amp;&lt; test"), "test >&< test");
 }

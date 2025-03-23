@@ -7,20 +7,21 @@ use std::{
 };
 
 use chapters::Chapter;
-use epub::Epub;
+use epub::{Epub, Meta};
 use error::{OrDie, 即死, 死};
 use global_str::GlobalStr;
 
-mod markov;
 mod chapters;
 mod epub;
 mod error;
 mod gaiji;
 mod global_str;
 mod heuristics;
+mod markov;
 mod txt;
 mod yomi;
 
+const SEP: char = '\t'; // For file I/O
 static EPUB_FNAME: GlobalStr = GlobalStr::new();
 static PHASE: GlobalStr = GlobalStr::new();
 
@@ -28,9 +29,12 @@ pub fn prepare(epub_fname: &Path, output_path: &Path) -> (Epub, Vec<Chapter>) {
     let mut file = File::open(epub_fname).or_(死!("failed to open EPUB file"));
     let epub = Epub::new(&mut file);
 
-    let chapters_fname = output_path.join("chapters.txt");
+    let meta_fname = output_path.join("meta.tsv");
+    let chapters_fname = output_path.join("chapters.tsv");
+    let meta = epub.get_meta();
+    meta.write(&meta_fname);
     let chapters = chapters::read(&chapters_fname).unwrap_or_else(|| {
-        let chapters = chapters::generate(&epub);
+        let chapters = chapters::generate(&epub, &meta);
         eprintln!("No chapters file found. Writing {chapters_fname:?}");
         chapters::write(&chapters, &chapters_fname);
         chapters
@@ -41,13 +45,13 @@ pub fn prepare(epub_fname: &Path, output_path: &Path) -> (Epub, Vec<Chapter>) {
 
 pub fn output_book(
     epub: &Epub,
+    meta: &Meta,
     chapters: &[Chapter],
     gaiji: &mut HashMap<String, char>,
     output_path: &Path,
 ) {
-    let book_name = &chapters[0].book_name;
-    let txt_fname = output_path.join(book_name).with_extension("txt");
-    let yomi_fname = output_path.join(book_name).with_extension("ruby.yomi");
+    let txt_fname = output_path.join(&meta.title).with_extension("txt");
+    let yomi_fname = output_path.join(&meta.title).with_extension("ruby.yomi");
 
     let (txt, yomi) = txt::produce_txt_yomi(gaiji, epub, chapters);
     let mut txt_file = File::create(&txt_fname).or_(死!());

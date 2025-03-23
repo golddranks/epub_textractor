@@ -1,19 +1,20 @@
 use std::collections::HashMap;
 use std::fs::File;
 
+pub use meta::Meta;
+
 use crate::chapters::Chapter;
 use crate::error::OrDie;
 use crate::yomi::Yomi;
-use crate::{即死, 死, PHASE};
+use crate::{PHASE, 即死, 死};
 
 mod doc;
+mod meta;
 mod xhtml;
 mod zip;
 
 pub struct Epub {
-    pub title: String,
-    pub author: String,
-    pub publisher: String,
+    pub content: String,
     pub body: Vec<(String, String)>,
     pub href_to_spine_idx: HashMap<String, usize>,
     pub toc: Vec<(String, String)>,
@@ -68,10 +69,6 @@ impl Epub {
         let toc = toc.extract_string(file);
         let content = content.extract_string(file);
 
-        let title = doc::get_title(&content).to_owned();
-        let author = doc::get_author(&content).to_owned();
-        let publisher = doc::get_publisher(&content).to_owned();
-
         // manifest is a id->href map of the EPUB file contents (including images, style sheets, metadata etc.)
         let manifest = doc::get_manifest(&content);
 
@@ -96,9 +93,7 @@ impl Epub {
         }
 
         Epub {
-            title,
-            author,
-            publisher,
+            content,
             body,
             href_to_spine_idx,
             toc,
@@ -109,5 +104,9 @@ impl Epub {
         self.body[chapter.idxs.clone()]
             .iter()
             .flat_map(|(href, passage)| doc::parse_passage(href, passage))
+    }
+
+    pub fn get_meta(&self) -> Meta {
+        Meta::new(self)
     }
 }
