@@ -4,21 +4,30 @@ pub fn viterbi<'a, const S: usize, O>(
     emit: impl Fn(&'a O) -> [f32; S],
     obs: &'a [O],
 ) -> Vec<usize> {
-    assert!(obs.len() > 1);
+    assert!(obs.len() > 0);
     let mut prob = vec![[0.0; S]; obs.len()];
     let mut prev = vec![[0; S]; obs.len()];
 
     let emissions = emit(&obs[0]);
+    dbg!(&emissions);
     for s in 0..S {
         prob[0][s] = init[s] * emissions[s];
     }
+    dbg!(&prob);
 
     for t in 1..obs.len() {
         let emissions = emit(&obs[t]);
+        dbg!(&emissions);
         for s in 0..S {
             for r in 0..S {
                 let new_prob = prob[t - 1][r] * trans[r][s] * emissions[s];
+                if s == 9 {
+                    dbg!(t, s, r, prob[t][s], new_prob);
+                }
                 if new_prob > prob[t][s] {
+                    if s == 9 {
+                        dbg!("updated prob");
+                    }
                     prob[t][s] = new_prob;
                     prev[t][s] = r;
                 }
@@ -26,14 +35,19 @@ pub fn viterbi<'a, const S: usize, O>(
         }
     }
 
+    dbg!(&prob);
+    dbg!(&prev);
+
     let mut path = vec![0; obs.len()];
     let last_prob = prob[obs.len() - 1];
     let max_prob = (0..S)
         .max_by(|&s, &r| last_prob[s].total_cmp(&last_prob[r]))
         .expect("len > 0");
 
+    dbg!(max_prob);
+
     path[obs.len() - 1] = max_prob;
-    for t in (0..obs.len() - 2).rev() {
+    for t in (0..obs.len() - 1).rev() {
         path[t] = prev[t + 1][path[t + 1]];
     }
     path

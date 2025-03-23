@@ -185,8 +185,9 @@ pub fn generate(epub: &Epub) -> Vec<Chapter> {
 
     let all_chapters = other_chapters.chain(once(last_toc_chapter));
 
-    for (name, idxs) in all_chapters {
-        let role = heuristics::guess_role(&chapters, name);
+    let roles = heuristics::infer_roles(all_chapters.clone().map(|(name, _)| name.as_str()));
+
+    for ((name, idxs), role) in all_chapters.zip(roles) {
         chapters.push(Chapter {
             book_name: book_name.clone(),
             chap_name: name.to_owned(),

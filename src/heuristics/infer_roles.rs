@@ -1,398 +1,300 @@
 use crate::{
-    chapters::{self, Role},
-    error::即死,
+    chapters::Role,
     heuristics::utils::{contains_any_of, contains_numerals},
     markov,
 };
 
-fn is_cover(name: &str) -> bool {
-    contains_any_of(name, &["表紙", "表題紙"])
-}
+type Probs = [f32; 11];
+type Feats = [bool; 11];
 
-fn is_toc(name: &str) -> bool {
+fn is_contents(name: &str) -> bool {
     contains_any_of(
         name,
-        &[
-            "目次",
-            "もくじ",
-            "ＣＯＮＴＥＮＴＳ",
-            "contents",
-            "Contents",
-            "CONTENTS",
-            "Ｍｅｎｕ",
-        ],
+        &["目次", "もくじ", "ＣＯＮＴＥＮＴＳ", "contents", "Contents", "CONTENTS", "Ｍｅｎｕ"],
     )
 }
 
-fn is_before_extra(name: &str) -> bool {
-    contains_any_of(name, &["紹介", "登場人物"])
+fn extract_features(name: &str) -> Feats {
+    [
+        contains_any_of(name, &["表紙", "表題紙"]),   // cover
+        contains_any_of(name, &["紹介", "登場人物"]), // before_extra
+        false,                                        // afterword, but no patterns are known yet
+        is_contents(name),                            // contents
+        contains_any_of(name, &["プロローグ", "序"]), // prologue
+        contains_numerals(name) || contains_any_of(name, &["章"]), // main
+        contains_any_of(name, &["エピローグ", "終章"]), //epilogue
+        contains_any_of(name, &["外伝", "番外編"]),   // bonus_chapter
+        contains_any_of(name, &["あとがき", "後書"]), // afterword
+        contains_any_of(name, &["付録"]),             // after_extra
+        contains_any_of(name, &["奥付"]),             // copyright
+    ]
 }
 
-fn is_prologue(name: &str) -> bool {
-    contains_any_of(name, &["プロローグ", "序"])
+const INIT: Probs = [
+    0.2,  // Cover
+    0.1,  // BeforeExtra
+    0.1,  // Foreword
+    0.19, // Contents
+    0.2,  // Prologue
+    0.2,  // Main
+    0.02, // Epilogue
+    0.02, // BonusChapter
+    0.02, // Afterword
+    0.02, // AfterExtra
+    0.02, // Copyright
+];
+
+#[cfg(test)]
+const END: Probs = [
+    0.01, // Cover
+    0.01, // BeforeExtra
+    0.01, // Foreword
+    0.1,  // Contents
+    0.01, // Prologue
+    0.2,  // Main
+    0.3,  // Epilogue
+    0.3,  // BonusChapter
+    0.5,  // Afterword
+    0.5,  // AfterExtra
+    0.9,  // Copyright
+];
+
+const TRANS: [Probs; 11] = [
+    [0.001, 0.1, 0.05, 0.05, 0.05, 0.7, 0.01, 0.001, 0.018, 0.01, 0.01], // Cover
+    [0.001, 0.6, 0.1, 0.1, 0.1, 0.05, 0.01, 0.001, 0.027, 0.01, 0.001],  // BeforeExtra
+    [0.001, 0.05, 0.5, 0.2, 0.1, 0.1, 0.02, 0.001, 0.017, 0.01, 0.001],  // Foreword
+    [0.001, 0.1, 0.1, 0.1, 0.3, 0.35, 0.01, 0.001, 0.01, 0.027, 0.001],  // Contents
+    [0.001, 0.02, 0.02, 0.05, 0.35, 0.5, 0.03, 0.017, 0.001, 0.01, 0.001], // Prologue
+    [0.01, 0.01, 0.01, 0.01, 0.01, 0.6, 0.1, 0.1, 0.05, 0.05, 0.05],     // Main
+    [0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.6, 0.1, 0.1, 0.076, 0.01], // Epilogue
+    [0.001, 0.001, 0.001, 0.001, 0.01, 0.046, 0.3, 0.5, 0.1, 0.02, 0.02], // BonusChapter
+    [0.001, 0.001, 0.001, 0.001, 0.001, 0.02, 0.1, 0.02, 0.7, 0.1, 0.055], // Afterword
+    [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.41, 0.5],   // AfterExtra
+    [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.1, 0.1], // Copyright
+];
+
+const EMIT: [Probs; 11] = [
+    [0.90, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01], // Cover
+    [0.01, 0.80, 0.05, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01], // BeforeExtra
+    [0.01, 0.05, 0.80, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01], // Foreword
+    [0.01, 0.05, 0.03, 0.85, 0.02, 0.01, 0.01, 0.01, 0.001, 0.001, 0.001], // Contents
+    [0.01, 0.01, 0.01, 0.01, 0.85, 0.10, 0.001, 0.001, 0.001, 0.001, 0.001], // Prologue
+    [0.001, 0.001, 0.001, 0.01, 0.05, 0.90, 0.01, 0.02, 0.01, 0.01, 0.01], // Main
+    [0.001, 0.001, 0.001, 0.01, 0.01, 0.01, 0.85, 0.10, 0.01, 0.01, 0.01], // Epilogue
+    [0.001, 0.001, 0.001, 0.01, 0.05, 0.05, 0.05, 0.80, 0.03, 0.001, 0.01], // BonusChapter
+    [0.001, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05, 0.03, 0.80, 0.01, 0.01], // Afterword
+    [0.001, 0.01, 0.01, 0.01, 0.03, 0.03, 0.05, 0.05, 0.05, 0.75, 0.001], // AfterExtra
+    [0.01, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.001, 0.01, 0.97], // Copyright
+];
+
+fn emit(feats: &Feats) -> Probs {
+    EMIT.map(|probs| {
+        feats
+            .iter()
+            .zip(probs)
+            .filter_map(|(feat, prob)| feat.then_some(prob))
+            .product() // the features are considered independent
+    })
 }
 
-fn is_main(name: &str) -> bool {
-    contains_numerals(name) || contains_any_of(name, &["章"])
-}
+#[test]
+fn test_emit() {
+    const TRUE: bool = true;
 
-fn is_epilogue(name: &str) -> bool {
-    contains_any_of(name, &["エピローグ", "終章"])
-}
-
-fn is_bonus_chapter(name: &str) -> bool {
-    contains_any_of(name, &["外伝", "番外編"])
-}
-
-fn is_afterword(name: &str) -> bool {
-    contains_any_of(name, &["あとがき", "後書"])
-}
-
-fn is_after_extra(name: &str) -> bool {
-    contains_any_of(name, &["付録"])
-}
-
-fn is_copyright(name: &str) -> bool {
-    contains_any_of(name, &["奥付"])
-}
-
-fn anything_goes(_: &str) -> bool {
-    true
-}
-
-fn assumed_order(r: Role) -> usize {
-    match r {
-        Role::Cover => 0,
-        Role::BeforeExtra => 1,
-        Role::Foreword => 1,
-        Role::Contents => 1,
-        Role::Prologue => 2,
-        Role::Main => 3,
-        Role::Epilogue => 4,
-        Role::BonusChapter => 5,
-        Role::Afterword => 6,
-        Role::AfterExtra => 6,
-        Role::Copyright => 7,
-    }
-}
-
-pub fn guess_role(chapters: &[chapters::Chapter], name: &str) -> Role {
-    let highest = chapters.last().map(|c| c.role).unwrap_or(Role::Cover);
-    let tests = [
-        (true, is_cover as fn(&str) -> bool, Role::Cover),
-        (true, is_before_extra, Role::BeforeExtra),
-        (true, is_toc, Role::Contents),
-        (true, is_prologue, Role::Prologue),
-        (true, is_epilogue, Role::Epilogue),
-        (true, is_afterword, Role::Afterword),
-        (true, is_copyright, Role::Copyright),
-        (false, anything_goes, Role::Foreword),
-        (false, anything_goes, Role::Main),
-        (false, anything_goes, Role::BonusChapter),
-        (false, anything_goes, Role::AfterExtra),
-    ];
-    for (reliable, test, role) in tests {
-        let matches = test(name);
-        if assumed_order(role) < assumed_order(highest) {
-            if reliable && matches {
-                即死!(
-                    "Chapter {name} is out of order with role {}: {:?}",
-                    role,
-                    chapters
-                );
-            }
-            continue;
-        }
-        if matches {
-            return role;
-        }
-    }
-    即死!("No role found for chapter: {name}");
-}
-
-#[derive(Debug, PartialEq, Eq, Default)]
-struct Features {
-    cover: bool,
-    before_extra: bool,
-    contents: bool,
-    prologue: bool,
-    main: bool,
-    epilogue: bool,
-    bonus_chapter: bool,
-    afterword: bool,
-    after_extra: bool,
-    copyright: bool,
-}
-
-fn extract_features(name: &str) -> Features {
-    Features {
-        cover: is_cover(name),
-        before_extra: is_before_extra(name),
-        contents: is_toc(name),
-        prologue: is_prologue(name),
-        main: is_main(name),
-        epilogue: is_epilogue(name),
-        bonus_chapter: is_bonus_chapter(name),
-        afterword: is_afterword(name),
-        after_extra: is_after_extra(name),
-        copyright: is_copyright(name),
-    }
-}
-
-pub fn infer_roles(names: &[&str]) -> Vec<Role> {
-    let features: Vec<_> = names.iter().map(|name| extract_features(name)).collect();
-    let init = [
-        0.29, 0.09, 0.1, 0.29, 0.09, 0.09, 0.01, 0.01, 0.01, 0.01, 0.01,
-    ];
-    let trans = [
-        // Cover
+    assert_eq!(
+        emit(&[TRUE, false, false, false, false, false, false, false, false, false, false]),
+        [0.90, 0.01, 0.01, 0.01, 0.01, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01] // 0th column
+    );
+    assert_eq!(
+        emit(&[false, TRUE, false, false, false, false, false, false, false, false, false]),
+        [0.01, 0.80, 0.05, 0.05, 0.01, 0.001, 0.001, 0.001, 0.001, 0.01, 0.001] // 1st column
+    );
+    assert_eq!(
+        emit(&[false, false, false, false, TRUE, false, false, false, false, false, false]),
+        [0.01, 0.02, 0.02, 0.02, 0.85, 0.05, 0.01, 0.05, 0.05, 0.03, 0.001] // 4st column
+    );
+    assert_eq!(
+        emit(&[false, false, false, false, false, TRUE, false, false, false, false, false]),
+        [0.01, 0.02, 0.02, 0.01, 0.10, 0.90, 0.01, 0.05, 0.05, 0.03, 0.001] // 5th column
+    );
+    assert_eq!(
+        emit(&[false, false, false, false, TRUE, TRUE, false, false, false, false, false]),
         [
-            0.001, 0.1, 0.05, 0.05, 0.05, 0.7, 0.01, 0.001, 0.02, 0.01, 0.01,
-        ],
-        // BeforeExtra
-        [
-            0.001, 0.6, 0.1, 0.1, 0.1, 0.05, 0.01, 0.001, 0.03, 0.01, 0.001,
-        ],
-        // Foreword
-        [
-            0.001, 0.05, 0.5, 0.2, 0.1, 0.1, 0.02, 0.001, 0.02, 0.01, 0.001,
-        ],
-        // Contents
-        [
-            0.001, 0.1, 0.1, 0.5, 0.1, 0.15, 0.01, 0.001, 0.01, 0.02, 0.001,
-        ],
-        // Prologue
-        [
-            0.001, 0.02, 0.02, 0.05, 0.5, 0.35, 0.03, 0.01, 0.001, 0.01, 0.001,
-        ],
-        // Main
-        [
-            0.001, 0.001, 0.001, 0.001, 0.02, 0.9, 0.05, 0.02, 0.001, 0.01, 0.001,
-        ],
-        // Epilogue
-        [
-            0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.6, 0.1, 0.1, 0.08, 0.01,
-        ],
-        // BonusChapter
-        [
-            0.001, 0.001, 0.001, 0.001, 0.01, 0.05, 0.3, 0.5, 0.1, 0.02, 0.02,
-        ],
-        // Afterword
-        [
-            0.001, 0.001, 0.001, 0.001, 0.001, 0.02, 0.1, 0.02, 0.7, 0.1, 0.06,
-        ],
-        // AfterExtra
-        [
-            0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.05, 0.01, 0.1, 0.75, 0.08,
-        ],
-        // Copyright
-        [
-            0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.1, 0.1, 0.79,
-        ],
-    ];
-    let emit = |feat: &Features| match feat {
-        Features { cover: true, .. } => [
-            0.90, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
-        ],
-        Features {
-            before_extra: true, ..
-        } => [
-            0.01, 0.80, 0.05, 0.03, 0.02, 0.02, 0.02, 0.02, 0.01, 0.01, 0.01,
-        ],
-        Features { contents: true, .. } => [
-            0.01, 0.05, 0.85, 0.03, 0.02, 0.01, 0.01, 0.01, 0.001, 0.001, 0.001,
-        ],
-        Features { prologue: true, .. } => [
-            0.01, 0.01, 0.01, 0.85, 0.10, 0.01, 0.001, 0.001, 0.001, 0.001, 0.001,
-        ],
-        Features { main: true, .. } => [
-            0.001, 0.001, 0.001, 0.05, 0.90, 0.001, 0.02, 0.01, 0.01, 0.001, 0.01,
-        ],
-        Features { epilogue: true, .. } => [
-            0.001, 0.001, 0.001, 0.01, 0.10, 0.85, 0.01, 0.01, 0.01, 0.001, 0.01,
-        ],
-        Features {
-            bonus_chapter: true,
-            ..
-        } => [
-            0.001, 0.001, 0.001, 0.01, 0.05, 0.05, 0.80, 0.05, 0.03, 0.001, 0.01,
-        ],
-        Features {
-            afterword: true, ..
-        } => [
-            0.001, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05, 0.80, 0.03, 0.01, 0.01,
-        ],
-        Features {
-            after_extra: true, ..
-        } => [
-            0.001, 0.01, 0.01, 0.01, 0.03, 0.03, 0.05, 0.05, 0.75, 0.05, 0.001,
-        ],
-        Features {
-            copyright: true, ..
-        } => [
-            0.01, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.01, 0.001, 0.97, 0.01,
-        ],
-        _ => [
-            0.10, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09, 0.09,
-        ],
-    };
-    let path = markov::viterbi(&init, &trans, emit, &features);
+            0.0001,
+            0.0004,
+            0.0004,
+            0.0002,
+            0.085,
+            0.9 * 0.05,
+            0.0001,
+            0.05 * 0.05,
+            0.05 * 0.05,
+            0.0009,
+            0.001 * 0.001
+        ] // products of 4st and 5th column
+    );
+}
+
+pub fn infer_roles<'a>(names: impl Iterator<Item = &'a str>) -> Vec<Role> {
+    let features: Vec<_> = names.map(|name| extract_features(name)).collect();
+    dbg!(&features);
+    let path = markov::viterbi(&INIT, &TRANS, emit, &features);
 
     path.into_iter().map(|s| Role::from_num(s)).collect()
 }
 
 #[test]
+fn assert_sum_unity() {
+    fn assert_unity(probs: Probs, end: f32) {
+        let mut sorted = probs.clone();
+        sorted.sort_by(f32::total_cmp);
+        let sum: f32 = sorted.iter().sum();
+        if sum + end != 1.0 {
+            panic!("{:?} doesn't sum to 1.0 but {}", probs, sum);
+        }
+    }
+
+    assert_unity(INIT, 0.0);
+
+    assert_unity(TRANS[0], END[0]);
+    assert_unity(TRANS[1], END[1]);
+    assert_unity(TRANS[2], END[2]);
+    assert_unity(TRANS[3], END[3]);
+    assert_unity(TRANS[4], END[4]);
+    assert_unity(TRANS[5], END[5]);
+    assert_unity(TRANS[6], END[6]);
+    assert_unity(TRANS[7], END[7]);
+    assert_unity(TRANS[8], END[8]);
+    assert_unity(TRANS[9], END[9]);
+    assert_unity(TRANS[10], END[10]);
+}
+#[test]
 fn test_extract_features() {
+    const TRUE: bool = true; // For visual readability in feature vectors below
     assert_eq!(
-        extract_features("CONTENTS"),
-        Features {
-            contents: true,
-            ..Default::default()
-        }
+        extract_features("表紙"),
+        [TRUE, false, false, false, false, false, false, false, false, false, false]
     );
-
-    assert_eq!(
-        extract_features("第一章 長距離偵察任務"),
-        Features {
-            main: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("付録 歴史概略図"),
-        Features {
-            after_extra: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("あとがき"),
-        Features {
-            afterword: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("奥付"),
-        Features {
-            copyright: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("外伝 借りてきた猫"),
-        Features {
-            bonus_chapter: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("目次"),
-        Features {
-            contents: true,
-            ..Default::default()
-        }
-    );
-
-    assert_eq!(
-        extract_features("【序幕】 独白"),
-        Features {
-            prologue: true,
-            ..Default::default()
-        }
-    );
-
     assert_eq!(
         extract_features("人物紹介"),
-        Features {
-            before_extra: true,
-            ..Default::default()
-        }
+        [false, TRUE, false, false, false, false, false, false, false, false, false]
     );
-
     assert_eq!(
-        extract_features("終章〈お大事に〉"),
-        Features {
-            epilogue: true,
-            main: true,
-            ..Default::default()
-        }
+        extract_features("CONTENTS"),
+        [false, false, false, TRUE, false, false, false, false, false, false, false]
     );
-
+    assert_eq!(
+        extract_features("目次"),
+        [false, false, false, TRUE, false, false, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("【序幕】 独白"),
+        [false, false, false, false, TRUE, false, false, false, false, false, false]
+    );
     assert_eq!(
         extract_features("１ 始まりの事件"),
-        Features {
-            main: true,
-            ..Default::default()
-        }
+        [false, false, false, false, false, TRUE, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("第一章 長距離偵察任務"),
+        [false, false, false, false, false, TRUE, false, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("終章〈お大事に〉"),
+        [false, false, false, false, false, TRUE, TRUE, false, false, false, false]
+    );
+    assert_eq!(
+        extract_features("外伝 借りてきた猫"),
+        [false, false, false, false, false, false, false, TRUE, false, false, false]
+    );
+    assert_eq!(
+        extract_features("あとがき"),
+        [false, false, false, false, false, false, false, false, TRUE, false, false]
     );
 
     assert_eq!(
         extract_features("あとがき ─クリスといっしょ！─"),
-        Features {
-            afterword: true,
-            ..Default::default()
-        }
+        [false, false, false, false, false, false, false, false, TRUE, false, false]
+    );
+    assert_eq!(
+        extract_features("付録 歴史概略図"),
+        [false, false, false, false, false, false, false, false, false, TRUE, false]
+    );
+    assert_eq!(
+        extract_features("奥付"),
+        [false, false, false, false, false, false, false, false, false, false, TRUE]
     );
 }
 
 #[test]
-fn test_infer_roles_simple() {
+fn test_infer_roles_simple_one() {
+    assert_eq!(infer_roles(["表紙"].into_iter()), vec![Role::Cover]);
+    assert_eq!(infer_roles(["Contents"].into_iter()), vec![Role::Contents]);
+    assert_eq!(infer_roles(["Contents"].into_iter()), vec![Role::Contents]);
+    assert_eq!(infer_roles(["第一章 長距離"].into_iter()), vec![Role::Main]);
+    assert_eq!(infer_roles(["奥付"].into_iter()), vec![Role::Copyright]);
+}
+
+#[test]
+fn test_infer_roles_simple_two() {
     assert_eq!(
-        infer_roles(&["表紙", "物語"]),
+        infer_roles(["表紙", "物語"].into_iter()),
         vec![Role::Cover, Role::Main]
     );
     assert_eq!(
-        infer_roles(&["CONTENTS", "物語"]),
+        infer_roles(["CONTENTS", "第一章"].into_iter()),
         vec![Role::Contents, Role::Main]
     );
     assert_eq!(
-        infer_roles(&["第一章 長距離偵察任務", "奥付"]),
+        infer_roles(["CONTENTS", "物語"].into_iter()),
+        vec![Role::Contents, Role::Main]
+    );
+    assert_eq!(
+        infer_roles(["第一章 長距離偵察任務", "奥付"].into_iter()),
         vec![Role::Main, Role::Copyright]
     );
+}
+
+#[test]
+fn test_infer_roles_simple_d() {
     assert_eq!(
-        infer_roles(&["付録 歴史概略図", "物語"]),
-        vec![Role::BeforeExtra, Role::Main]
+        infer_roles(["物語", "付録 歴史概略図"].into_iter()),
+        vec![Role::Main, Role::AfterExtra]
     );
     assert_eq!(
-        infer_roles(&["物語", "あとがき"]),
+        infer_roles(["物語", "あとがき"].into_iter()),
         vec![Role::Main, Role::Afterword]
     );
     assert_eq!(
-        infer_roles(&["物語", "奥付"]),
+        infer_roles(["物語", "奥付"].into_iter()),
         vec![Role::Main, Role::Copyright]
     );
     assert_eq!(
-        infer_roles(&["物語", "外伝"]),
+        infer_roles(["物語", "外伝"].into_iter()),
         vec![Role::Main, Role::BonusChapter]
     );
     assert_eq!(
-        infer_roles(&["目次", "物語"]),
+        infer_roles(["目次", "物語"].into_iter()),
         vec![Role::Contents, Role::Main]
     );
     assert_eq!(
-        infer_roles(&["【序幕】 独白", "物語"]),
+        infer_roles(["【序幕】 独白", "物語"].into_iter()),
         vec![Role::Prologue, Role::Main]
     );
     assert_eq!(
-        infer_roles(&["人物紹介", "物語"]),
+        infer_roles(["人物紹介", "物語"].into_iter()),
         vec![Role::BeforeExtra, Role::Main]
     );
     assert_eq!(
-        infer_roles(&["終章〈お大事に〉", "奥付"]),
+        infer_roles(["終章〈お大事に〉", "奥付"].into_iter()),
         vec![Role::Main, Role::Copyright]
     );
     assert_eq!(
-        infer_roles(&["１ 始まりの事件", "エピローグ"]),
+        infer_roles(["１ 始まりの事件", "エピローグ"].into_iter()),
         vec![Role::Main, Role::Epilogue]
     );
     assert_eq!(
-        infer_roles(&["物語", "あとがき クリスと！"]),
+        infer_roles(["物語", "あとがき クリスと！"].into_iter()),
         vec![Role::Main, Role::Afterword]
     );
 }
@@ -502,7 +404,7 @@ mod test_data {
 #[test]
 fn test_infer_roles_a() {
     assert_eq!(
-        infer_roles(test_data::A),
+        infer_roles(test_data::A.iter().copied()),
         vec![
             Role::Contents,
             Role::Main,
@@ -521,7 +423,7 @@ fn test_infer_roles_a() {
 #[test]
 fn test_infer_roles_b() {
     assert_eq!(
-        infer_roles(test_data::B),
+        infer_roles(test_data::B.iter().copied()),
         vec![
             Role::Contents,
             Role::Main,
@@ -542,22 +444,15 @@ fn test_infer_roles_b() {
 #[test]
 fn test_infer_roles_c() {
     assert_eq!(
-        infer_roles(test_data::C),
-        vec![
-            Role::Contents,
-            Role::Main,
-            Role::Main,
-            Role::Main,
-            Role::Afterword,
-            Role::Copyright
-        ]
+        infer_roles(test_data::C.iter().copied()),
+        vec![Role::Contents, Role::Main, Role::Main, Role::Main, Role::Afterword, Role::Copyright]
     );
 }
 
 #[test]
 fn test_infer_roles_d() {
     assert_eq!(
-        infer_roles(test_data::D),
+        infer_roles(test_data::D.iter().copied()),
         vec![
             Role::Contents,
             Role::Prologue,
@@ -582,7 +477,7 @@ fn test_infer_roles_d() {
 #[test]
 fn test_infer_roles_e() {
     assert_eq!(
-        infer_roles(test_data::E),
+        infer_roles(test_data::E.iter().copied()),
         vec![
             Role::BeforeExtra,
             Role::Contents,
@@ -604,7 +499,7 @@ fn test_infer_roles_e() {
 #[test]
 fn test_infer_roles_f() {
     assert_eq!(
-        infer_roles(test_data::F),
+        infer_roles(test_data::F.iter().copied()),
         vec![
             Role::Prologue,
             Role::Main,
@@ -621,7 +516,7 @@ fn test_infer_roles_f() {
 #[test]
 fn test_infer_roles_g() {
     assert_eq!(
-        infer_roles(test_data::G),
+        infer_roles(test_data::G.iter().copied()),
         vec![
             Role::BeforeExtra,
             Role::Contents,
